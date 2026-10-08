@@ -5,6 +5,7 @@
 
 import crypto from "crypto";
 import fs from "fs";
+import net from "net";
 import path from "path";
 import {
   CANONICAL_DEMO_GOAL_IDS,
@@ -69,17 +70,20 @@ interface LockoutEntry {
  * ============================================================================
  * Rate Limiting & Lockout Architecture Documentation:
  * ============================================================================
- * Scope & Storage Boundary:
- * PayPilot AI uses a synchronized local persistent file store (`data/auth_lockout.json`)
- * mirrored in an in-memory Map (`authLockoutMap`).
- *
- * - Single-Instance / Persistent Container (e.g. Docker, Fly.io volume, EC2, VPS):
- *   Fully shared across restarts and concurrent requests within the persistent volume.
- * - Multi-Instance Ephemeral Serverless (e.g. AWS Lambda / Vercel Serverless):
- *   Isolated microVMs do not share local filesystem state. In multi-instance serverless
- *   production topologies, rate limiting should be delegated to an ingress gateway
- *   (e.g., Cloudflare Rate Limiting Rules / AWS WAF) or a distributed Redis store
- *   (e.g., Upstash Redis).
+ * Scope & Storage Concurrency Boundary:
+ * - Single Node.js Process: Concurrency is safely serialized by the single-threaded
+ *   event loop updating `authLockoutMap` in-memory.
+ * - Local File Persistence (`data/auth_lockout.json`): Provides best-effort state
+ *   preservation across process restarts on persistent disks. File sync employs
+ *   read-time merge logic and atomic file replacement (`.tmp.{pid}.{nonce}` rename).
+ * - Concurrency Limit: This local file snapshot mechanism does NOT use OS-level file
+ *   locks or atomic multi-process compare-and-swap; concurrent writes from separate
+ *   OS processes or worker clusters can experience race conditions.
+ * - Multi-Instance / Serverless Hosting: In serverless (e.g., AWS Lambda, Vercel)
+ *   or multi-container clusters, each instance has an ephemeral, isolated filesystem.
+ *   Production deployments requiring distributed rate limiting across instances
+ *   MUST use an external shared store (e.g., Upstash Redis, Redis, or an ingress
+ *   gateway like Cloudflare Rate Limiting Rules / AWS WAF).
  * ============================================================================
  */
 const authLockoutMap = new Map<string, LockoutEntry>();
@@ -94,9 +98,19 @@ function syncFromSharedStore(): void {
       const data = JSON.parse(fs.readFileSync(LOCKOUT_FILE, "utf-8"));
       const now = Date.now();
       for (const [key, val] of Object.entries(data)) {
-        const entry = val as LockoutEntry;
-        if (entry && (entry.lockedUntil > now || now - entry.lastAttemptAt < LOCKOUT_PERIOD_MS)) {
-          authLockoutMap.set(key, entry);
+        const diskEntry = val as LockoutEntry;
+        if (!diskEntry) continue;
+        const memEntry = authLockoutMap.get(key);
+        if (!memEntry) {
+          if (diskEntry.lockedUntil > now || now - diskEntry.lastAttemptAt < LOCKOUT_PERIOD_MS) {
+            authLockoutMap.set(key, diskEntry);
+          }
+        } else {
+          // Conflict-free merge: preserve the highest lockout and latest attempt timestamp
+          memEntry.failedAttempts = Math.max(memEntry.failedAttempts, diskEntry.failedAttempts || 0);
+          memEntry.lockedUntil = Math.max(memEntry.lockedUntil, diskEntry.lockedUntil || 0);
+          memEntry.lastAttemptAt = Math.max(memEntry.lastAttemptAt, diskEntry.lastAttemptAt || 0);
+          authLockoutMap.set(key, memEntry);
         }
       }
     }
@@ -108,12 +122,31 @@ function syncToSharedStore(): void {
   try {
     const dir = path.dirname(LOCKOUT_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const obj: Record<string, LockoutEntry> = {};
-    for (const [k, v] of Array.from(authLockoutMap.entries())) {
-      obj[k] = v;
+
+    // Read current disk snapshot first to merge any concurrent external changes
+    let diskSnapshot: Record<string, LockoutEntry> = {};
+    if (fs.existsSync(LOCKOUT_FILE)) {
+      try {
+        diskSnapshot = JSON.parse(fs.readFileSync(LOCKOUT_FILE, "utf-8")) || {};
+      } catch {}
     }
-    const tmp = `${LOCKOUT_FILE}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), "utf-8");
+
+    // Merge in-memory map into disk snapshot
+    for (const [k, memEntry] of Array.from(authLockoutMap.entries())) {
+      const existing = diskSnapshot[k];
+      if (!existing) {
+        diskSnapshot[k] = memEntry;
+      } else {
+        diskSnapshot[k] = {
+          failedAttempts: Math.max(existing.failedAttempts || 0, memEntry.failedAttempts),
+          lockedUntil: Math.max(existing.lockedUntil || 0, memEntry.lockedUntil),
+          lastAttemptAt: Math.max(existing.lastAttemptAt || 0, memEntry.lastAttemptAt),
+        };
+      }
+    }
+
+    const tmp = `${LOCKOUT_FILE}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+    fs.writeFileSync(tmp, JSON.stringify(diskSnapshot, null, 2), "utf-8");
     fs.renameSync(tmp, LOCKOUT_FILE);
   } catch {}
 }
@@ -175,18 +208,13 @@ export function clearFailedAuth(clientIdentifier: string): void {
 }
 
 /**
- * Validates IPv4 or IPv6 format to reject header injection or malformed input.
+ * Validates IPv4 or IPv6 format using Node's standard libuv IP parser (`net.isIP`).
+ * Returns true if the string is an RFC-compliant IPv4 or IPv6 address.
  */
 export function isValidIpAddress(ip: string): boolean {
   if (!ip || typeof ip !== "string") return false;
   const trimmed = ip.trim();
-  // IPv4 format
-  const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-  if (ipv4Regex.test(trimmed)) return true;
-  // IPv6 format (basic safe hex+colon validation)
-  const ipv6Regex = /^[0-9a-fA-F:]{2,45}$/;
-  if (ipv6Regex.test(trimmed) && trimmed.includes(":")) return true;
-  return false;
+  return net.isIP(trimmed) !== 0;
 }
 
 /**

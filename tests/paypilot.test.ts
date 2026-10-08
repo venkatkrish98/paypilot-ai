@@ -2148,10 +2148,12 @@ describe("PayPilot AI Test Suite", () => {
       const anonRes = await getGoalById(anonReq, { params: { id: "goal_orphaned_sim" } });
       expect(anonRes.status).toBe(403);
 
-      // 2. IP Validation tests
+      // 2. IP Validation tests (RFC-compliant via Node net.isIP)
       expect(isValidIpAddress("192.168.1.1")).toBe(true);
       expect(isValidIpAddress("2001:0db8:85a3:0000:0000:8a2e:0370:7334")).toBe(true);
       expect(isValidIpAddress("::1")).toBe(true);
+      expect(isValidIpAddress("fe80::1ff:fe23:4567:890a")).toBe(true);
+      expect(isValidIpAddress("2001:db8:::1")).toBe(false); // triple colons invalid in RFC IPv6
       expect(isValidIpAddress("invalid_string_injection\r\n")).toBe(false);
       expect(isValidIpAddress("999.999.999.999")).toBe(false);
 
