@@ -13,7 +13,7 @@ import { defaultSafetyEngine } from "../src/packages/risk";
 import { defaultPayPalClient, PayPalClient } from "../src/packages/paypal";
 import { PaymentGoal, Customer } from "../src/packages/types";
 import { getNextDayOfWeek, parseRelativeDate } from "../src/packages/agent/ai-planner";
-import { checkWriteAuthorization, isRequestAdmin } from "../src/packages/security/auth";
+import { checkWriteAuthorization, isRequestAdmin, createSignedVisitorToken } from "../src/packages/security/auth";
 
 // ------------------------------------------------------------------------------
 // Database Test Isolation: Force in-memory database store
@@ -836,11 +836,13 @@ describe("PayPilot AI Test Suite", () => {
   it("27. should enforce write protection at API route handler level and permit admin key", async () => {
     const originalEnv = process.env.NODE_ENV;
     const originalKey = process.env.PAYPILOT_ADMIN_KEY;
+    const originalSecret = process.env.PAYPILOT_SESSION_SECRET;
     const { POST: createGoalPost } = await import("../src/app/api/goals/route");
 
     try {
       process.env.NODE_ENV = "production";
       delete process.env.PAYPILOT_ADMIN_KEY;
+      process.env.PAYPILOT_SESSION_SECRET = "production_super_strong_secret_key_at_least_32_chars_long";
 
       const payload = JSON.stringify({
         goal: "Collect $300 for UI work",
@@ -865,6 +867,8 @@ describe("PayPilot AI Test Suite", () => {
       process.env.NODE_ENV = originalEnv;
       if (originalKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = originalKey;
       else delete process.env.PAYPILOT_ADMIN_KEY;
+      if (originalSecret !== undefined) process.env.PAYPILOT_SESSION_SECRET = originalSecret;
+      else delete process.env.PAYPILOT_SESSION_SECRET;
     }
   });
 
@@ -1222,15 +1226,18 @@ describe("PayPilot AI Test Suite", () => {
   });
 
   // 32. Production read authorization scoping protects sensitive customer records, memories, and real transactions
+  // 32. Production read authorization scoping protects sensitive customer records, memories, and real transactions
   it("32. should protect and scope read APIs in production for anonymous visitors while granting full access to admins", async () => {
     const origNodeEnv = process.env.NODE_ENV;
     const origDemoMode = process.env.DEMO_MODE;
     const origAdminKey = process.env.PAYPILOT_ADMIN_KEY;
+    const origSessionSecret = process.env.PAYPILOT_SESSION_SECRET;
 
     try {
       process.env.NODE_ENV = "production";
       delete process.env.DEMO_MODE; // Default public demo enabled
       process.env.PAYPILOT_ADMIN_KEY = "prod_admin_secret_555";
+      process.env.PAYPILOT_SESSION_SECRET = "production_super_strong_secret_key_at_least_32_chars_long";
 
       // Create a private non-demo customer
       db.saveCustomer({
@@ -1330,6 +1337,8 @@ describe("PayPilot AI Test Suite", () => {
       else delete process.env.DEMO_MODE;
       if (origAdminKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = origAdminKey;
       else delete process.env.PAYPILOT_ADMIN_KEY;
+      if (origSessionSecret !== undefined) process.env.PAYPILOT_SESSION_SECRET = origSessionSecret;
+      else delete process.env.PAYPILOT_SESSION_SECRET;
     }
   });
 
@@ -1338,11 +1347,13 @@ describe("PayPilot AI Test Suite", () => {
     const origNodeEnv = process.env.NODE_ENV;
     const origDemoMode = process.env.DEMO_MODE;
     const origAdminKey = process.env.PAYPILOT_ADMIN_KEY;
+    const origSessionSecret = process.env.PAYPILOT_SESSION_SECRET;
 
     try {
       process.env.NODE_ENV = "production";
       delete process.env.DEMO_MODE;
       process.env.PAYPILOT_ADMIN_KEY = "admin_secret_key_888";
+      process.env.PAYPILOT_SESSION_SECRET = "production_super_strong_secret_key_at_least_32_chars_long";
 
       // Mock PayPal credentials present on server to test isolation
       vi.spyOn(defaultPayPalClient, "isConfigured").mockReturnValue(true);
@@ -1373,24 +1384,27 @@ describe("PayPilot AI Test Suite", () => {
       else delete process.env.DEMO_MODE;
       if (origAdminKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = origAdminKey;
       else delete process.env.PAYPILOT_ADMIN_KEY;
+      if (origSessionSecret !== undefined) process.env.PAYPILOT_SESSION_SECRET = origSessionSecret;
+      else delete process.env.PAYPILOT_SESSION_SECRET;
     }
   });
 
-  // 34. Cross-visitor data isolation: Visitor 1's simulation data is never visible to Visitor 2
-  it("34. should isolate visitor data: Visitor A's goals, customers, and memories are never visible to Visitor B", async () => {
+  // 34. Cross-visitor data isolation & anti-spoofing enforcement
+  it("34. should isolate visitor data: Visitor A's goals, customers, and memories are never visible to Visitor B, and spoofing headers is rejected", async () => {
     const { GET: getGoals, POST: postGoal } = await import("../src/app/api/goals/route");
     const { GET: getCustomers, POST: postCustomer } = await import("../src/app/api/customers/route");
     const { GET: getMemories, POST: postMemory } = await import("../src/app/api/memory/route");
 
-    const visitorA = "visitor_aaa_111";
-    const visitorB = "visitor_bbb_222";
+    // Establish valid server-signed visitor identities
+    const { token: tokenA, visitorId: visitorA } = createSignedVisitorToken("visitor_aaa_111");
+    const { token: tokenB, visitorId: visitorB } = createSignedVisitorToken("visitor_bbb_222");
 
-    // Visitor A creates a simulation goal
+    // Visitor A creates a simulation goal using signed cookie
     const goalReq = new Request("http://localhost:3000/api/goals", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-paypilot-visitor-id": visitorA,
+        Cookie: `paypilot_visitor_session=${tokenA}`,
       },
       body: JSON.stringify({
         goal: "Collect $450 from Private Client A for design",
@@ -1408,7 +1422,7 @@ describe("PayPilot AI Test Suite", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-paypilot-visitor-id": visitorA,
+        Cookie: `paypilot_visitor_session=${tokenA}`,
       },
       body: JSON.stringify({
         name: "Confidential Client Alpha",
@@ -1422,7 +1436,7 @@ describe("PayPilot AI Test Suite", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-paypilot-visitor-id": visitorA,
+        Cookie: `paypilot_visitor_session=${tokenA}`,
       },
       body: JSON.stringify({
         key: "private_rule_a",
@@ -1432,9 +1446,9 @@ describe("PayPilot AI Test Suite", () => {
     const memRes = await postMemory(memReq);
     expect(memRes.status).toBe(200);
 
-    // Now Visitor B fetches goals
+    // Now Visitor B fetches goals with their own signed session cookie
     const bGoalReq = new Request("http://localhost:3000/api/goals", {
-      headers: { "x-paypilot-visitor-id": visitorB },
+      headers: { Cookie: `paypilot_visitor_session=${tokenB}` },
     });
     const bGoalRes = await getGoals(bGoalReq);
     const bGoalData = await bGoalRes.json();
@@ -1448,7 +1462,7 @@ describe("PayPilot AI Test Suite", () => {
 
     // Visitor B fetches customers
     const bCustReq = new Request("http://localhost:3000/api/customers", {
-      headers: { "x-paypilot-visitor-id": visitorB },
+      headers: { Cookie: `paypilot_visitor_session=${tokenB}` },
     });
     const bCustRes = await getCustomers(bCustReq);
     const bCustData = await bCustRes.json();
@@ -1456,89 +1470,142 @@ describe("PayPilot AI Test Suite", () => {
 
     // Visitor B fetches memories
     const bMemReq = new Request("http://localhost:3000/api/memory", {
-      headers: { "x-paypilot-visitor-id": visitorB },
+      headers: { Cookie: `paypilot_visitor_session=${tokenB}` },
     });
     const bMemRes = await getMemories(bMemReq);
     const bMemData = await bMemRes.json();
     expect(bMemData.memories.some((m: any) => m.value.includes("Secret preference for Visitor A"))).toBe(false);
+
+    // CRITICAL ANTI-SPOOFING TESTS (Requirement 3):
+    // 1. Attacker sends x-paypilot-visitor-id header attempting to impersonate Visitor A -> Ignored!
+    const spoofHeaderReq = new Request("http://localhost:3000/api/goals", {
+      headers: { "x-paypilot-visitor-id": visitorA },
+    });
+    const spoofHeaderRes = await getGoals(spoofHeaderReq);
+    const spoofHeaderData = await spoofHeaderRes.json();
+    expect(spoofHeaderData.goals.map((g: any) => g.id)).not.toContain(goalData.goal.id);
+
+    // 2. Attacker sends forged unsigned cookie -> Rejected & assigned new identity!
+    const forgedCookieReq = new Request("http://localhost:3000/api/goals", {
+      headers: { Cookie: `paypilot_visitor_session=fake_${visitorA}` },
+    });
+    const forgedCookieRes = await getGoals(forgedCookieReq);
+    const forgedCookieData = await forgedCookieRes.json();
+    expect(forgedCookieData.goals.map((g: any) => g.id)).not.toContain(goalData.goal.id);
   });
 
   // 35. UI-visible mode truthfulness in /api/config
   it("35. should report simulation mode to anonymous UI requests even when PayPal credentials exist on server", async () => {
-    vi.spyOn(defaultPayPalClient, "isConfigured").mockReturnValue(true);
+    const origAdminKey = process.env.PAYPILOT_ADMIN_KEY;
+    try {
+      process.env.PAYPILOT_ADMIN_KEY = "test_custom_admin_key_2026";
+      vi.spyOn(defaultPayPalClient, "isConfigured").mockReturnValue(true);
 
-    const { GET: getConfig } = await import("../src/app/api/config/route");
+      const { GET: getConfig } = await import("../src/app/api/config/route");
 
-    // Anonymous request
-    const anonReq = new Request("http://localhost:3000/api/config");
-    const anonRes = await getConfig(anonReq);
-    expect(anonRes.status).toBe(200);
-    const anonData = await anonRes.json();
-    expect(anonData.mode).toBe("simulation");
-    expect(anonData.adminAuthenticated).toBe(false);
-    expect(anonData.canExecuteSandbox).toBe(false);
+      // Anonymous request
+      const anonReq = new Request("http://localhost:3000/api/config");
+      const anonRes = await getConfig(anonReq);
+      expect(anonRes.status).toBe(200);
+      const anonData = await anonRes.json();
+      expect(anonData.mode).toBe("simulation");
+      expect(anonData.adminAuthenticated).toBe(false);
+      expect(anonData.canExecuteSandbox).toBe(false);
 
-    // Admin request with Bearer key
-    const adminReq = new Request("http://localhost:3000/api/config", {
-      headers: { Authorization: "Bearer paypal_sandbox_judge_2026" },
-    });
-    const adminRes = await getConfig(adminReq);
-    expect(adminRes.status).toBe(200);
-    const adminData = await adminRes.json();
-    expect(adminData.mode).toBe("sandbox");
-    expect(adminData.adminAuthenticated).toBe(true);
-    expect(adminData.canExecuteSandbox).toBe(true);
-
-    vi.restoreAllMocks();
+      // Admin request with configured key in header
+      const adminReq = new Request("http://localhost:3000/api/config", {
+        headers: { Authorization: "Bearer test_custom_admin_key_2026" },
+      });
+      const adminRes = await getConfig(adminReq);
+      expect(adminRes.status).toBe(200);
+      const adminData = await adminRes.json();
+      expect(adminData.mode).toBe("sandbox");
+      expect(adminData.adminAuthenticated).toBe(true);
+      expect(adminData.canExecuteSandbox).toBe(true);
+    } finally {
+      vi.restoreAllMocks();
+      if (origAdminKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = origAdminKey;
+      else delete process.env.PAYPILOT_ADMIN_KEY;
+    }
   });
 
-  // 36. UI Admin Auth session login, cookie setting, and logout
-  it("36. should handle UI admin session authentication and logout securely via httpOnly cookie", async () => {
-    const { POST: postSession, GET: getSession, DELETE: deleteSession } = await import(
-      "../src/app/api/auth/session/route"
-    );
+  // 36. UI Admin Auth session login, rate limiting/lockout, cookie setting, and logout
+  it("36. should handle UI admin session authentication with rate limiting, lockout, and cryptographically signed session tokens", async () => {
+    const origAdminKey = process.env.PAYPILOT_ADMIN_KEY;
+    try {
+      process.env.PAYPILOT_ADMIN_KEY = "test_custom_admin_key_2026";
+      const { POST: postSession, GET: getSession, DELETE: deleteSession } = await import(
+        "../src/app/api/auth/session/route"
+      );
 
-    // 1. Invalid key fails
-    const badLoginReq = new Request("http://localhost:3000/api/auth/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ adminKey: "wrong_password" }),
-    });
-    const badLoginRes = await postSession(badLoginReq);
-    expect(badLoginRes.status).toBe(401);
+      // 1. Invalid key fails with 401
+      const makeBadLoginReq = () =>
+        new Request("http://localhost:3000/api/auth/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-real-ip": "10.0.0.99" },
+          body: JSON.stringify({ adminKey: "wrong_password" }),
+        });
+      const badLoginRes = await postSession(makeBadLoginReq());
+      expect(badLoginRes.status).toBe(401);
 
-    // 2. Valid key succeeds and sets cookie
-    const goodLoginReq = new Request("http://localhost:3000/api/auth/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ adminKey: "paypal_sandbox_judge_2026" }),
-    });
-    const goodLoginRes = await postSession(goodLoginReq);
-    expect(goodLoginRes.status).toBe(200);
-    const cookieHeader = goodLoginRes.headers.get("set-cookie");
-    expect(cookieHeader).toBeDefined();
-    expect(cookieHeader).toContain("paypilot_admin_session=");
-    expect(cookieHeader).toContain("HttpOnly");
+      // 2. Rate limiting & Lockout: 4 more failed attempts trigger 429 lockout!
+      for (let i = 0; i < 4; i++) {
+        await postSession(makeBadLoginReq());
+      }
+      const lockedReq = new Request("http://localhost:3000/api/auth/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-real-ip": "10.0.0.99" },
+        body: JSON.stringify({ adminKey: "test_custom_admin_key_2026" }),
+      });
+      const lockedRes = await postSession(lockedReq);
+      expect(lockedRes.status).toBe(429);
+      const lockedData = await lockedRes.json();
+      expect(lockedData.error).toContain("Too many failed authentication attempts");
 
-    // Extract cookie value for subsequent test request
-    const cookieMatch = cookieHeader?.match(/paypilot_admin_session=([^;]+)/);
-    const token = cookieMatch ? cookieMatch[1] : "";
-    expect(token.length).toBeGreaterThan(10);
+      // 3. Different client with valid key succeeds and sets signed cookie
+      const goodLoginReq = new Request("http://localhost:3000/api/auth/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-real-ip": "10.0.0.101" },
+        body: JSON.stringify({ adminKey: "test_custom_admin_key_2026" }),
+      });
+      const goodLoginRes = await postSession(goodLoginReq);
+      expect(goodLoginRes.status).toBe(200);
+      const cookieHeader = goodLoginRes.headers.get("set-cookie");
+      expect(cookieHeader).toBeDefined();
+      expect(cookieHeader).toContain("paypilot_admin_session=");
+      expect(cookieHeader).toContain("HttpOnly");
 
-    // 3. GET /api/auth/session with session cookie returns authenticated: true
-    const checkReq = new Request("http://localhost:3000/api/auth/session", {
-      headers: { Cookie: `paypilot_admin_session=${token}` },
-    });
-    const checkRes = await getSession(checkReq);
-    const checkData = await checkRes.json();
-    expect(checkData.authenticated).toBe(true);
-    expect(checkData.role).toBe("admin");
+      // Extract cookie value for subsequent test request
+      const cookieMatch = cookieHeader?.match(/paypilot_admin_session=([^;]+)/);
+      const token = cookieMatch ? cookieMatch[1] : "";
+      expect(token.length).toBeGreaterThan(10);
 
-    // 4. Logout clears session cookie
-    const logoutRes = await deleteSession(checkReq);
-    expect(logoutRes.status).toBe(200);
-    const logoutCookie = logoutRes.headers.get("set-cookie");
-    expect(logoutCookie).toContain("Max-Age=0");
+      // 4. GET /api/auth/session with session cookie returns authenticated: true
+      const checkReq = new Request("http://localhost:3000/api/auth/session", {
+        headers: { Cookie: `paypilot_admin_session=${token}` },
+      });
+      const checkRes = await getSession(checkReq);
+      const checkData = await checkRes.json();
+      expect(checkData.authenticated).toBe(true);
+      expect(checkData.role).toBe("admin");
+
+      // 5. Tampered token fails
+      const tamperedReq = new Request("http://localhost:3000/api/auth/session", {
+        headers: { Cookie: `paypilot_admin_session=${token}tampered` },
+      });
+      const tamperedRes = await getSession(tamperedReq);
+      const tamperedData = await tamperedRes.json();
+      expect(tamperedData.authenticated).toBe(false);
+
+      // 6. Logout clears session cookie
+      const logoutRes = await deleteSession();
+      expect(logoutRes.status).toBe(200);
+      const logoutCookie = logoutRes.headers.get("set-cookie");
+      expect(logoutCookie).toContain("Max-Age=0");
+    } finally {
+      if (origAdminKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = origAdminKey;
+      else delete process.env.PAYPILOT_ADMIN_KEY;
+    }
   });
 
   // 37. Strict canonical fixture scoping
@@ -1557,6 +1624,243 @@ describe("PayPilot AI Test Suite", () => {
 
     // Metrics match exactly the sum and counts of the canonical goals
     expect(data.metrics.totalGoals).toBe(CANONICAL_DEMO_GOAL_IDS.size);
+  });
+
+  // 38. Canonical fixture safeguard: Never expose a real Sandbox order merely because its ID is canonical (Requirement 4)
+  it("38. should never expose a real PayPal Sandbox order merely because its ID is in the canonical demo fixture set", async () => {
+    const { GET: getGoals } = await import("../src/app/api/goals/route");
+    const { GET: getGoalById } = await import("../src/app/api/goals/[id]/route");
+    const { POST: approveGoal } = await import("../src/app/api/goals/[id]/approve/route");
+    const { POST: captureGoal } = await import("../src/app/api/goals/[id]/capture/route");
+
+    // Modify canonical fixture goal_sarah_1200 into a real Sandbox order
+    const sarahGoal = db.getGoalById("goal_sarah_1200");
+    expect(sarahGoal).toBeDefined();
+    if (!sarahGoal) return;
+
+    const originalSarah = JSON.parse(JSON.stringify(sarahGoal));
+
+    try {
+      sarahGoal.mode = "sandbox";
+      sarahGoal.isSimulated = false;
+      sarahGoal.paypalOrderId = "REAL_PAYPAL_SANDBOX_ORDER_999";
+      sarahGoal.status = "awaiting_payment";
+      db.saveGoal(sarahGoal);
+
+      // Anonymous requester GET /api/goals: MUST NOT contain goal_sarah_1200!
+      const anonReq = new Request("http://localhost:3000/api/goals");
+      const anonRes = await getGoals(anonReq);
+      const anonData = await anonRes.json();
+      expect(anonData.goals.find((g: PaymentGoal) => g.id === "goal_sarah_1200")).toBeUndefined();
+
+      // Anonymous requester GET /api/goals/goal_sarah_1200: MUST be 403 Forbidden!
+      const anonIdReq = new Request("http://localhost:3000/api/goals/goal_sarah_1200");
+      const anonIdRes = await getGoalById(anonIdReq, { params: { id: "goal_sarah_1200" } });
+      expect(anonIdRes.status).toBe(403);
+
+      // Anonymous requester POST /api/goals/goal_sarah_1200/approve: MUST be 401 or 403!
+      const anonApproveReq = new Request("http://localhost:3000/api/goals/goal_sarah_1200/approve", {
+        method: "POST",
+      });
+      const anonApproveRes = await approveGoal(anonApproveReq, { params: { id: "goal_sarah_1200" } });
+      expect([401, 403]).toContain(anonApproveRes.status);
+
+      // Anonymous requester POST /api/goals/goal_sarah_1200/capture: MUST be 401 Unauthorized!
+      const anonCapReq = new Request("http://localhost:3000/api/goals/goal_sarah_1200/capture", {
+        method: "POST",
+      });
+      const anonCapRes = await captureGoal(anonCapReq, { params: { id: "goal_sarah_1200" } });
+      expect([401, 403]).toContain(anonCapRes.status);
+    } finally {
+      db.saveGoal(originalSarah);
+    }
+  });
+
+  // 39. Strong PAYPILOT_SESSION_SECRET fail-closed requirement in production (Requirement 2)
+  it("39. should fail closed in production when PAYPILOT_SESSION_SECRET is missing or less than 32 chars", async () => {
+    const { getSessionSecret } = await import("../src/packages/security/auth");
+    const origEnv = process.env.NODE_ENV;
+    const origSecret = process.env.PAYPILOT_SESSION_SECRET;
+
+    try {
+      process.env.NODE_ENV = "production";
+      delete process.env.PAYPILOT_SESSION_SECRET;
+      expect(() => getSessionSecret()).toThrow(/PAYPILOT_SESSION_SECRET/);
+
+      process.env.PAYPILOT_SESSION_SECRET = "too_short_secret";
+      expect(() => getSessionSecret()).toThrow(/PAYPILOT_SESSION_SECRET/);
+
+      process.env.PAYPILOT_SESSION_SECRET = "a_very_strong_production_session_secret_with_more_than_32_characters";
+      expect(getSessionSecret()).toBe("a_very_strong_production_session_secret_with_more_than_32_characters");
+    } finally {
+      if (origEnv !== undefined) process.env.NODE_ENV = origEnv;
+      else delete process.env.NODE_ENV;
+      if (origSecret !== undefined) process.env.PAYPILOT_SESSION_SECRET = origSecret;
+      else delete process.env.PAYPILOT_SESSION_SECRET;
+    }
+  });
+
+  // 40. Live Gemini 3.8 Flash verification status disclosure (Requirement 5)
+  it("40. should report live verification of gemini-3.8-flash only after genuine success", async () => {
+    const { AIPlanner } = await import("../src/packages/agent/ai-planner");
+    const planner = new AIPlanner();
+
+    // Before any successful plan call, hasVerifiedGemini() is false
+    expect(planner.hasVerifiedGemini()).toBe(false);
+
+    // Run deterministic parse (offline fallback)
+    const result = planner.deterministicParse("Collect $1,200 from Sarah by Friday");
+    expect(result.action).toBe("create_collection_goal");
+    expect(result.aiEngine).toBe("deterministic");
+    expect(planner.hasVerifiedGemini()).toBe(false);
+  });
+
+  // 41. Server-signed visitor identity & anti-spoofing defense (Requirement 3)
+  it("41. should reject spoofed x-paypilot-visitor-id and forged client cookies, preserving complete cross-visitor isolation", async () => {
+    const { createSignedVisitorToken, verifyVisitorToken, resolveVisitorIdentity } = await import(
+      "../src/packages/security/auth"
+    );
+    const { GET: getGoals } = await import("../src/app/api/goals/route");
+    const { GET: getGoalById } = await import("../src/app/api/goals/[id]/route");
+    const { POST: approveGoal } = await import("../src/app/api/goals/[id]/approve/route");
+    const { POST: captureGoal } = await import("../src/app/api/goals/[id]/capture/route");
+    const { GET: getCustomers } = await import("../src/app/api/customers/route");
+    const { GET: getMemory } = await import("../src/app/api/memory/route");
+
+    // 1. Establish legitimate Visitor A with a genuine server-signed cookie
+    const { token: tokenA, visitorId: vidA } = createSignedVisitorToken();
+    expect(verifyVisitorToken(tokenA)).toBe(vidA);
+
+    const goalA: PaymentGoal = {
+      id: "goal_visitor_a_private",
+      goal: "Collect $300 from Client A",
+      goalType: "collection",
+      customer: "Client A",
+      customerId: "cust_visitor_a",
+      amount: 300,
+      currency: "USD",
+      deadline: "Tomorrow",
+      purpose: "Private Consulting",
+      status: "pending_approval",
+      mode: "simulation",
+      isSimulated: true,
+      requiresApproval: true,
+      riskLevel: "low",
+      riskScore: 5,
+      riskChecks: [],
+      createdBy: "agent",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      visitorId: vidA,
+      timeline: [],
+    };
+    db.saveGoal(goalA);
+
+    const custA: Customer = {
+      id: "cust_visitor_a",
+      name: "Client A",
+      email: "client.a@example.com",
+      outstandingAmount: 300,
+      riskIndicators: [],
+      isNewRecipient: false,
+      notes: "Private client",
+      paymentHistory: [],
+      visitorId: vidA,
+    };
+    db.saveCustomer(custA);
+
+    const memA: MemoryItem = {
+      id: "mem_visitor_a",
+      key: "client_a_rate",
+      value: "Hourly rate is $150",
+      category: "rule",
+      createdAt: new Date().toISOString(),
+      visitorId: vidA,
+    };
+    db.saveMemory(memA);
+
+    try {
+      // 2. Legitimate Visitor A CAN see their own data
+      const reqLegitA = new Request("http://localhost:3000/api/goals", {
+        headers: { Cookie: `paypilot_visitor_session=${tokenA}` },
+      });
+      const resLegitA = await getGoals(reqLegitA);
+      const dataLegitA = await resLegitA.json();
+      expect(dataLegitA.goals.some((g: PaymentGoal) => g.id === "goal_visitor_a_private")).toBe(true);
+
+      // 3. Attacker tries to spoof x-paypilot-visitor-id header (zero-trust enforcement)
+      const spoofReq = new Request("http://localhost:3000/api/goals", {
+        headers: { "x-paypilot-visitor-id": vidA },
+      });
+      const identityResolved = resolveVisitorIdentity(spoofReq);
+      // Identity must NOT equal vidA because header is ignored and cookie was missing!
+      expect(identityResolved.visitorId).not.toBe(vidA);
+
+      const resSpoof = await getGoals(spoofReq);
+      const dataSpoof = await resSpoof.json();
+      expect(dataSpoof.goals.some((g: PaymentGoal) => g.id === "goal_visitor_a_private")).toBe(false);
+
+      // 4. Attacker tries to GET /api/goals/[id] for Visitor A's goal with spoofed header -> 403 Forbidden
+      const idSpoofReq = new Request("http://localhost:3000/api/goals/goal_visitor_a_private", {
+        headers: { "x-paypilot-visitor-id": vidA },
+      });
+      const idSpoofRes = await getGoalById(idSpoofReq, { params: { id: "goal_visitor_a_private" } });
+      expect(idSpoofRes.status).toBe(403);
+
+      // 5. Attacker tries to approve Visitor A's goal -> 403 Forbidden
+      const approveSpoofReq = new Request("http://localhost:3000/api/goals/goal_visitor_a_private/approve", {
+        method: "POST",
+        headers: { "x-paypilot-visitor-id": vidA },
+      });
+      const approveSpoofRes = await approveGoal(approveSpoofReq, { params: { id: "goal_visitor_a_private" } });
+      expect(approveSpoofRes.status).toBe(403);
+
+      // 6. Attacker tries to capture Visitor A's goal -> 403 Forbidden
+      const captureSpoofReq = new Request("http://localhost:3000/api/goals/goal_visitor_a_private/capture", {
+        method: "POST",
+        headers: {
+          "x-paypilot-visitor-id": vidA,
+          "x-simulation-checkout": "true",
+        },
+      });
+      const captureSpoofRes = await captureGoal(captureSpoofReq, { params: { id: "goal_visitor_a_private" } });
+      expect(captureSpoofRes.status).toBe(403);
+
+      // 7. Attacker tries to view customers or memories of Visitor A -> Excluded!
+      const custSpoofReq = new Request("http://localhost:3000/api/customers", {
+        headers: { "x-paypilot-visitor-id": vidA },
+      });
+      const custSpoofRes = await getCustomers(custSpoofReq);
+      const custData = await custSpoofRes.json();
+      expect(custData.customers.some((c: Customer) => c.id === "cust_visitor_a")).toBe(false);
+
+      const memSpoofReq = new Request("http://localhost:3000/api/memory", {
+        headers: { "x-paypilot-visitor-id": vidA },
+      });
+      const memSpoofRes = await getMemory(memSpoofReq);
+      const memData = await memSpoofRes.json();
+      expect(memData.memories.some((m: MemoryItem) => m.id === "mem_visitor_a")).toBe(false);
+
+      // 8. Attacker tries forged client cookie with arbitrary vid -> Invalid signature rejected!
+      const forgedPayload = Buffer.from(JSON.stringify({ vid: vidA, iat: Date.now(), exp: Date.now() + 99999 })).toString("base64url");
+      const forgedCookie = `${forgedPayload}.forged_signature_12345`;
+      expect(verifyVisitorToken(forgedCookie)).toBeNull();
+
+      const forgedReq = new Request("http://localhost:3000/api/goals", {
+        headers: { Cookie: `paypilot_visitor_session=${forgedCookie}` },
+      });
+      const forgedIdentity = resolveVisitorIdentity(forgedReq);
+      expect(forgedIdentity.visitorId).not.toBe(vidA);
+
+      const resForged = await getGoals(forgedReq);
+      const dataForged = await resForged.json();
+      expect(dataForged.goals.some((g: PaymentGoal) => g.id === "goal_visitor_a_private")).toBe(false);
+    } finally {
+      // Clean up test entities
+      db.deleteGoal("goal_visitor_a_private");
+      db.deleteCustomer("cust_visitor_a");
+      db.deleteMemory("mem_visitor_a");
+    }
   });
 });
 

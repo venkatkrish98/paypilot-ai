@@ -6,8 +6,9 @@ import { CANONICAL_DEMO_GOAL_IDS } from "@/packages/database";
 import {
   checkReadAuthorization,
   checkWriteAuthorization,
-  getVisitorId,
   isRequestAdmin,
+  resolveVisitorIdentity,
+  attachVisitorCookie,
   scopeGoalsForRequester,
 } from "@/packages/security/auth";
 
@@ -34,19 +35,32 @@ export async function GET(
 
     // Admin can see everything
     if (!readScope.isAdmin) {
+      const isRealSandbox =
+        !goal.isSimulated ||
+        goal.mode === "sandbox" ||
+        (Boolean(goal.paypalOrderId) && !goal.paypalOrderId?.startsWith("SIMULATED_"));
+
+      if (isRealSandbox) {
+        return NextResponse.json(
+          { error: "Access restricted: Real PayPal transactions require administrative authentication." },
+          { status: 403 }
+        );
+      }
+
       const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(goal.id);
       const isOwnVisitorGoal =
-        Boolean(readScope.visitorId && goal.visitorId === readScope.visitorId && goal.isSimulated);
+        goal.isSimulated && (!goal.visitorId || (Boolean(readScope.visitorId) && goal.visitorId === readScope.visitorId));
 
       if (!isCanonical && !isOwnVisitorGoal) {
         return NextResponse.json(
-          { error: "Access restricted: Real PayPal transactions or other visitor data require administrative authentication." },
+          { error: "Access restricted: Goals belonging to other sessions require administrative authentication." },
           { status: 403 }
         );
       }
     }
 
-    return NextResponse.json({ goal });
+    const response = NextResponse.json({ goal });
+    return attachVisitorCookie(response, readScope.newVisitorCookie, readScope.isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error fetching goal" },
@@ -70,7 +84,7 @@ export async function PATCH(
     }
 
     const isAdmin = isRequestAdmin(req);
-    const visitorId = getVisitorId(req);
+    const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
 
     const auth = checkWriteAuthorization(req, {
       isSimulated: existing.isSimulated,
@@ -81,8 +95,21 @@ export async function PATCH(
     }
 
     if (!isAdmin) {
+      const isRealSandbox =
+        !existing.isSimulated ||
+        existing.mode === "sandbox" ||
+        (Boolean(existing.paypalOrderId) && !existing.paypalOrderId?.startsWith("SIMULATED_"));
+
+      if (isRealSandbox) {
+        return NextResponse.json(
+          { error: "Access restricted: Real PayPal transactions require administrative authentication." },
+          { status: 403 }
+        );
+      }
+
       const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(existing.id);
-      const isOwnGoal = Boolean(visitorId && existing.visitorId === visitorId && existing.isSimulated);
+      const isOwnGoal =
+        existing.isSimulated && (!existing.visitorId || (Boolean(visitorId) && existing.visitorId === visitorId));
       if (!isCanonical && !isOwnGoal) {
         return NextResponse.json(
           { error: "Access restricted: You cannot modify goals belonging to other sessions." },
@@ -163,7 +190,8 @@ export async function PATCH(
     db.saveGoal(existing);
 
     const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
-    return NextResponse.json({ goal: existing, metrics: db.getMetrics(visibleGoals) });
+    const response = NextResponse.json({ goal: existing, metrics: db.getMetrics(visibleGoals) });
+    return attachVisitorCookie(response, newCookieToken, isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error updating goal" },

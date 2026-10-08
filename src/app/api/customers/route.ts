@@ -3,8 +3,9 @@ import { db } from "@/packages/database";
 import {
   checkReadAuthorization,
   checkWriteAuthorization,
-  getVisitorId,
   isRequestAdmin,
+  resolveVisitorIdentity,
+  attachVisitorCookie,
   scopeCustomersForRequester,
 } from "@/packages/security/auth";
 
@@ -19,7 +20,8 @@ export async function GET(req: Request) {
     }
 
     const customers = scopeCustomersForRequester(db.getCustomers(), readScope.isAdmin, readScope.visitorId);
-    return NextResponse.json({ customers });
+    const response = NextResponse.json({ customers });
+    return attachVisitorCookie(response, readScope.newVisitorCookie, readScope.isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error fetching customers" },
@@ -31,6 +33,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const isAdmin = isRequestAdmin(req);
+    const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
     const auth = checkWriteAuthorization(req, {
       isSimulated: true,
       action: "create",
@@ -54,9 +57,10 @@ export async function POST(req: Request) {
       notes: (body.notes || "").slice(0, 500),
       paymentHistory: Array.isArray(body.paymentHistory) ? body.paymentHistory : [],
       isDemoFixture: false,
-      visitorId: isAdmin ? undefined : (getVisitorId(req) || undefined),
+      visitorId: isAdmin ? undefined : visitorId,
     });
-    return NextResponse.json({ customer });
+    const response = NextResponse.json({ customer });
+    return attachVisitorCookie(response, newCookieToken, isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error saving customer" },

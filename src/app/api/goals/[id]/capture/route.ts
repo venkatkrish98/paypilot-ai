@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 import { defaultPayPalClient } from "@/packages/paypal";
 import { TimelineEvent } from "@/packages/types";
+import { CANONICAL_DEMO_GOAL_IDS } from "@/packages/database";
 import {
   checkWriteAuthorization,
-  getVisitorId,
   isRequestAdmin,
+  resolveVisitorIdentity,
+  attachVisitorCookie,
   scopeGoalsForRequester,
   validateOrderProvenance,
 } from "@/packages/security/auth";
@@ -43,7 +45,29 @@ export async function POST(
       );
     }
 
-    // 3. Real authorization check: Anonymous callers can NEVER capture real Sandbox orders
+    const isAdmin = isRequestAdmin(req);
+    const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
+
+    // 3. Real authorization & scoping check: Anonymous callers can NEVER capture real Sandbox orders or other visitors' goals
+    if (!isAdmin) {
+      if (isRealSandboxOrder) {
+        return NextResponse.json(
+          { error: "Unauthorized: Real PayPal Sandbox operations require administrative authorization." },
+          { status: 401 }
+        );
+      }
+
+      const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(goal.id);
+      const isOwnGoal =
+        goal.isSimulated && (!goal.visitorId || (Boolean(visitorId) && goal.visitorId === visitorId));
+      if (!isCanonical && !isOwnGoal) {
+        return NextResponse.json(
+          { error: "Access restricted: You cannot capture goals belonging to other sessions." },
+          { status: 403 }
+        );
+      }
+    }
+
     const auth = checkWriteAuthorization(req, {
       isSimulated: !isRealSandboxOrder,
       action: "capture",
@@ -183,11 +207,9 @@ export async function POST(
       ? `${goal.customer}'s payment of $${goal.amount.toLocaleString()} has been ${isLiveSandbox ? "confirmed via PayPal Sandbox" : "recorded in Simulation Mode"}! The payment goal is complete.\n\nNext action: ${pendingApprovalGoal.customer}'s $${pendingApprovalGoal.amount.toLocaleString()} disbursement review requires your approval.`
       : `${goal.customer}'s payment of $${goal.amount.toLocaleString()} has been reconciled! All payment goals are up to date.`;
 
-    const isAdmin = isRequestAdmin(req);
-    const visitorId = getVisitorId(req);
     const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       goal,
       metrics: db.getMetrics(visibleGoals),
@@ -195,6 +217,7 @@ export async function POST(
       recommendedGoalId: pendingApprovalGoal?.id,
       isSimulated: !isLiveSandbox,
     });
+    return attachVisitorCookie(response, newCookieToken, isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error processing payment capture" },

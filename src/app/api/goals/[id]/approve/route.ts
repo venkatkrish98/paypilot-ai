@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 import { defaultPayPalClient } from "@/packages/paypal";
 import { TimelineEvent } from "@/packages/types";
+import { CANONICAL_DEMO_GOAL_IDS } from "@/packages/database";
 import {
   checkWriteAuthorization,
-  getVisitorId,
   isRequestAdmin,
+  resolveVisitorIdentity,
+  attachVisitorCookie,
   scopeGoalsForRequester,
 } from "@/packages/security/auth";
 
@@ -20,15 +22,46 @@ export async function POST(
     }
 
     const isAdmin = isRequestAdmin(req);
-    const visitorId = getVisitorId(req);
-    const willBeRealSandbox = !goal.isSimulated || goal.mode === "sandbox" || defaultPayPalClient.isConfigured();
+    const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
+    const willBeRealSandbox =
+      !goal.isSimulated ||
+      goal.mode === "sandbox" ||
+      (Boolean(goal.paypalOrderId) && !goal.paypalOrderId?.startsWith("SIMULATED_")) ||
+      defaultPayPalClient.isConfigured();
 
     const auth = checkWriteAuthorization(req, {
       isSimulated: !willBeRealSandbox,
       action: "approve",
     });
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
+      return NextResponse.json(
+        { error: auth.reason || "Unauthorized: Real PayPal Sandbox operations require administrative authorization." },
+        { status: auth.statusCode || 401 }
+      );
+    }
+
+    if (!isAdmin) {
+      const isRealSandbox =
+        !goal.isSimulated ||
+        goal.mode === "sandbox" ||
+        (Boolean(goal.paypalOrderId) && !goal.paypalOrderId?.startsWith("SIMULATED_"));
+
+      if (isRealSandbox) {
+        return NextResponse.json(
+          { error: "Access restricted: Real PayPal Sandbox operations require administrative authorization." },
+          { status: 401 }
+        );
+      }
+
+      const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(goal.id);
+      const isOwnGoal =
+        goal.isSimulated && (!goal.visitorId || (Boolean(visitorId) && goal.visitorId === visitorId));
+      if (!isCanonical && !isOwnGoal) {
+        return NextResponse.json(
+          { error: "Access restricted: You cannot approve goals belonging to other sessions." },
+          { status: 403 }
+        );
+      }
     }
 
     const forceSimulation = !willBeRealSandbox;
@@ -80,13 +113,14 @@ export async function POST(
       db.saveGoal(goal);
 
       const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
-      return NextResponse.json({
+      const response = NextResponse.json({
         success: true,
         goal,
         metrics: db.getMetrics(visibleGoals),
         message: `Vendor disbursement of $${goal.amount.toLocaleString()} for ${goal.customer} approved for review (Simulation Only — No Payout Dispatched). Vendor balance remains unchanged until execution.`,
         isSimulated: true,
       });
+      return attachVisitorCookie(response, newCookieToken, isAdmin);
     }
 
     // Distinct Flow 2: Incoming Collection Order (held for threshold or new customer review)
@@ -127,7 +161,7 @@ export async function POST(
     db.saveGoal(goal);
 
     const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       goal,
       metrics: db.getMetrics(visibleGoals),
@@ -136,6 +170,7 @@ export async function POST(
       } Order ${paypalOrder.id} ready.`,
       isSimulated: isOrderSimulated,
     });
+    return attachVisitorCookie(response, newCookieToken, isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error approving payment" },

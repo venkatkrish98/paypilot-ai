@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
-import { checkWriteAuthorization } from "@/packages/security/auth";
+import {
+  checkWriteAuthorization,
+  isRequestAdmin,
+  resolveVisitorIdentity,
+  attachVisitorCookie,
+  scopeGoalsForRequester,
+  scopeCustomersForRequester,
+} from "@/packages/security/auth";
 
 export async function POST(req: Request) {
   try {
@@ -20,14 +27,23 @@ export async function POST(req: Request) {
       );
     }
 
+    const isAdmin = isRequestAdmin(req);
+    const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
+
     db.resetDemoFixtures();
-    return NextResponse.json({
+
+    const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
+    const visibleCustomers = scopeCustomersForRequester(db.getCustomers(), isAdmin, visitorId);
+    const metrics = db.getMetrics(visibleGoals);
+
+    const response = NextResponse.json({
       success: true,
       message: "Database safely reset to canonical demo fixtures",
-      metrics: db.getMetrics(),
-      goals: db.getGoals(),
-      customers: db.getCustomers(),
+      metrics,
+      goals: visibleGoals,
+      customers: visibleCustomers,
     });
+    return attachVisitorCookie(response, newCookieToken, isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error resetting demo data" },

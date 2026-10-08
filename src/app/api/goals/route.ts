@@ -4,7 +4,8 @@ import {
   checkReadAuthorization,
   checkWriteAuthorization,
   isRequestAdmin,
-  getVisitorId,
+  resolveVisitorIdentity,
+  attachVisitorCookie,
   scopeGoalsForRequester,
 } from "@/packages/security/auth";
 import { defaultPayPalClient } from "@/packages/paypal";
@@ -25,7 +26,8 @@ export async function GET(req: Request) {
     const allGoals = db.getGoals();
     const goals = scopeGoalsForRequester(allGoals, readScope.isAdmin, readScope.visitorId);
     const metrics = db.getMetrics(goals);
-    return NextResponse.json({ goals, metrics });
+    const response = NextResponse.json({ goals, metrics });
+    return attachVisitorCookie(response, readScope.newVisitorCookie, readScope.isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error fetching goals" },
@@ -37,6 +39,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const isAdmin = isRequestAdmin(req);
+    const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
     const isLive = isAdmin && defaultPayPalClient.isConfigured();
     const isSimulated = !isLive;
 
@@ -91,7 +94,7 @@ export async function POST(req: Request) {
         notes: "Created via payment goal dispatch.",
         paymentHistory: [],
         isDemoFixture: false,
-        visitorId: isAdmin ? undefined : (getVisitorId(req) || undefined),
+        visitorId: isAdmin ? undefined : visitorId,
       };
       db.saveCustomer(customer);
     }
@@ -177,12 +180,13 @@ export async function POST(req: Request) {
       updatedAt: new Date().toISOString(),
       timeline,
       isDemoFixture: false,
-      visitorId: isAdmin ? undefined : (getVisitorId(req) || undefined),
+      visitorId: isAdmin ? undefined : visitorId,
     };
 
     db.saveGoal(newGoal);
-    const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, getVisitorId(req));
-    return NextResponse.json({ goal: newGoal, metrics: db.getMetrics(visibleGoals) }, { status: 201 });
+    const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
+    const response = NextResponse.json({ goal: newGoal, metrics: db.getMetrics(visibleGoals) }, { status: 201 });
+    return attachVisitorCookie(response, newCookieToken, isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error creating goal" },

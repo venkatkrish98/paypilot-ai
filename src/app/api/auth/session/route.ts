@@ -4,17 +4,28 @@ import {
   isRequestAdmin,
   getConfiguredAdminKey,
   createAdminSessionToken,
+  checkAuthLockout,
+  recordFailedAuth,
+  clearFailedAuth,
+  resolveVisitorIdentity,
 } from "@/packages/security/auth";
 import { defaultPayPalClient } from "@/packages/paypal";
 
+function getClientIdentifier(req: Request): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return req.headers.get("x-real-ip") || "local_client";
+}
+
 export async function GET(req: Request) {
   const isAdmin = isRequestAdmin(req);
-  const isProduction = process.env.NODE_ENV === "production";
   const demoMode = process.env.DEMO_MODE !== "false";
   const paypalConfigured = defaultPayPalClient.isConfigured();
-  const effectiveMode = (paypalConfigured && isAdmin) ? "sandbox" : "simulation";
+  const effectiveMode = paypalConfigured && isAdmin ? "sandbox" : "simulation";
 
-  return NextResponse.json({
+  const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
+
+  const response = NextResponse.json({
     authenticated: isAdmin,
     role: isAdmin ? "admin" : "anonymous",
     mode: effectiveMode,
@@ -22,23 +33,53 @@ export async function GET(req: Request) {
     demoMode,
     sandboxAccess: isAdmin,
     simulationAccess: true,
+    visitorId: isAdmin ? undefined : visitorId,
     message: isAdmin
-      ? (paypalConfigured
-          ? "Administrator credentials verified. PayPal Sandbox mode unlocked."
-          : "Administrator credentials verified. (PayPal credentials not yet configured in .env).")
+      ? paypalConfigured
+        ? "Administrator credentials verified. PayPal Sandbox mode unlocked."
+        : "Administrator credentials verified. (PayPal credentials not yet configured in .env)."
       : "Anonymous session. Operations strictly restricted to simulation demo mode.",
   });
+
+  // Issue or refresh server-signed visitor identity cookie for anonymous sessions
+  if (newCookieToken && !isAdmin) {
+    response.cookies.set("paypilot_visitor_session", newCookieToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 24 * 60 * 60, // 24 hours
+    });
+  }
+
+  return response;
 }
 
 export async function POST(req: Request) {
   try {
+    const clientIp = getClientIdentifier(req);
+
+    // 1. Check Rate Limit / Lockout
+    const lockout = checkAuthLockout(clientIp);
+    if (lockout.isLocked) {
+      return NextResponse.json(
+        {
+          error: `Too many failed authentication attempts. Access locked out for ${lockout.remainingSeconds} seconds.`,
+        },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const adminKey = (body?.adminKey || "").trim();
 
     const configuredKey = getConfiguredAdminKey();
     if (!configuredKey) {
       return NextResponse.json(
-        { error: "No admin key configured on server." },
+        {
+          error:
+            "No administrator key configured on server. Please configure PAYPILOT_ADMIN_KEY in environment.",
+        },
         { status: 500 }
       );
     }
@@ -48,13 +89,18 @@ export async function POST(req: Request) {
       crypto.timingSafeEqual(Buffer.from(adminKey), Buffer.from(configuredKey));
 
     if (!isMatch) {
-      return NextResponse.json(
-        { error: "Invalid admin key provided." },
-        { status: 401 }
-      );
+      const failStatus = recordFailedAuth(clientIp);
+      const errorMsg = failStatus.isLocked
+        ? "Invalid admin key provided. Maximum attempts exceeded. Locked out for 15 minutes."
+        : `Invalid admin key provided. Remaining attempts before lockout: ${failStatus.remainingAttempts}.`;
+      return NextResponse.json({ error: errorMsg }, { status: 401 });
     }
 
-    const sessionToken = createAdminSessionToken(configuredKey);
+    // Authentication succeeded: clear lockout counter
+    clearFailedAuth(clientIp);
+
+    // Create cryptographically signed admin session token (2-hour validity)
+    const sessionToken = createAdminSessionToken();
     const paypalConfigured = defaultPayPalClient.isConfigured();
     const effectiveMode = paypalConfigured ? "sandbox" : "simulation";
 
@@ -69,13 +115,13 @@ export async function POST(req: Request) {
         : "Admin authentication successful. (Add PayPal Sandbox credentials to .env to execute live Orders v2).",
     });
 
-    // Set secure httpOnly session cookie
+    // Set secure, httpOnly, same-site signed session cookie
     response.cookies.set("paypilot_admin_session", sessionToken, {
       httpOnly: true,
-      path: "/",
-      sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24, // 24 hours
+      sameSite: "lax",
+      path: "/",
+      maxAge: 2 * 60 * 60, // 2 hours
     });
 
     return response;
@@ -96,8 +142,11 @@ export async function DELETE() {
     message: "Logged out to anonymous simulation demo session.",
   });
 
+  // Clear httpOnly admin session cookie
   response.cookies.set("paypilot_admin_session", "", {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
     path: "/",
     expires: new Date(0),
     maxAge: 0,

@@ -83,7 +83,7 @@ Most AI fintech implementations are **conversational wrappers**—they summarize
 
 ## Real AI Intent & Planning Engine
 
-PayPilot AI integrates **Google Gemini 2.5 Flash** via `@google/genai` for structured intent extraction:
+PayPilot AI integrates **Google Gemini 3.8 Flash** via `@google/genai` for structured intent extraction:
 - **Bounded Inputs:** Queries are bounded to 500 characters and sanitized.
 - **Strict JSON Schema:** Emits structured parameters: `action`, `amount`, `currency`, `customerName`, `deadline`, `purpose`.
 - **Verified Deterministic Fallback:** When `GEMINI_API_KEY` is not present or network fails, PayPilot falls back to its deterministic rule-based NLP parser.
@@ -249,14 +249,14 @@ npm test
 ## Current Architecture, Persistence Limits & Submission Evidence
 
 - **Runtime Mode:** Operates out of the box in verified **Simulation Mode** (deterministic local engine, zero external network dependency). Switches automatically to **Live PayPal Sandbox** and **Live Google Gemini** once credentials and an authorized session are established.
-- **In-UI Judge Sandbox Authentication:** Evaluators can click "Unlock Sandbox" in the dashboard header, enter the judge key (`paypal_sandbox_judge_2026` or configured `PAYPILOT_ADMIN_KEY`), and execute live PayPal Sandbox Orders v2 directly from the browser UI without terminal commands.
+- **In-UI Administrator Sandbox Authentication:** Evaluators can click "Unlock Sandbox" in the dashboard header, enter the explicitly configured administrator key (`PAYPILOT_ADMIN_KEY`), and execute live PayPal Sandbox Orders v2 directly from the browser UI without terminal commands. Failed attempts are rate-limited with lockout protection.
 - **Cross-Visitor Data Isolation:** Public demo visitors only see canonical fixtures (`goal_sarah_1200`, `goal_john_850`, `goal_mike_2500`, `goal_acme_600`) and their own isolated inputs.
 - **Sandbox Security & Order Provenance:** Real PayPal Sandbox goals can only be approved and captured through official PayPal buyer approval with administrative authorization. Validated order provenance prevents stale simulation flags from exposing Sandbox orders to anonymous capture.
 - **Truthful Payout Review Ledger:** Payout review approval records internal safety sign-off only; vendor balances remain unchanged and no completed payment records are added without real PayPal Payouts execution.
 - **Required Submission Evidence (Owner Checklist):**
   - [x] Public GitHub repository with open-source MIT license (`https://github.com/venkatkrish98/paypilot-ai`).
   - [x] Complete automated test suite (37/37 passing) and clean production build.
-  - [x] Live Google Gemini 2.5 Flash API Key configured in `.env`.
+  - [x] Live Google Gemini 3.8 Flash API Key configured in `.env`.
   - [x] In-UI evaluator auth workflow for testing live PayPal Sandbox execution.
   - [ ] Public YouTube demo video (must be publicly visible on YouTube, under 3 minutes per [Devpost rules](https://paypalaihackathon.devpost.com/rules)).
   - [ ] Publicly hosted deployment URL (e.g. Vercel / Cloud Run).

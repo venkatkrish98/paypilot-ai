@@ -4,8 +4,9 @@ import { db } from "@/packages/database";
 import {
   checkReadAuthorization,
   checkWriteAuthorization,
-  getVisitorId,
   isRequestAdmin,
+  resolveVisitorIdentity,
+  attachVisitorCookie,
   scopeRecommendationsForRequester,
 } from "@/packages/security/auth";
 
@@ -24,7 +25,8 @@ export async function GET(req: Request) {
       readScope.isAdmin,
       readScope.visitorId
     );
-    return NextResponse.json({ recommendations });
+    const response = NextResponse.json({ recommendations });
+    return attachVisitorCookie(response, readScope.newVisitorCookie, readScope.isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error fetching recommendations" },
@@ -36,6 +38,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const isAdmin = isRequestAdmin(req);
+    const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
     const auth = checkWriteAuthorization(req, {
       isSimulated: true,
       action: "update",
@@ -51,12 +54,13 @@ export async function POST(req: Request) {
     const visibleRecs = scopeRecommendationsForRequester(
       db.getRecommendations(),
       isAdmin,
-      getVisitorId(req)
+      visitorId
     );
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       recommendations: visibleRecs,
     });
+    return attachVisitorCookie(response, newCookieToken, isAdmin);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error handling recommendation" },

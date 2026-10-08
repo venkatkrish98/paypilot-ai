@@ -48,11 +48,6 @@ export function AdminAuthModal({ isOpen, onClose, onSuccess }: AdminAuthModalPro
     }
   };
 
-  const handleUseDefaultDevKey = () => {
-    setAdminKey("paypal_sandbox_judge_2026");
-    setError(null);
-  };
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200"
@@ -95,7 +90,7 @@ export function AdminAuthModal({ isOpen, onClose, onSuccess }: AdminAuthModalPro
             </span>
           </div>
           <p className="text-[11px] text-slate-500 dark:text-slate-400">
-            Authenticating with the admin key establishes an encrypted <code>httpOnly</code> browser session that allows creating and capturing real <strong>PayPal Orders v2</strong> in Sandbox.
+            Authenticating with the admin key establishes a cryptographically signed <code>httpOnly</code> browser session that allows creating and capturing real <strong>PayPal Orders v2</strong> in Sandbox.
           </p>
         </div>
 
@@ -110,7 +105,7 @@ export function AdminAuthModal({ isOpen, onClose, onSuccess }: AdminAuthModalPro
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Admin Key / Judge Passcode
+              Admin Key / Evaluator Passcode
             </label>
             <div className="relative">
               <Key className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -118,20 +113,13 @@ export function AdminAuthModal({ isOpen, onClose, onSuccess }: AdminAuthModalPro
                 type="password"
                 value={adminKey}
                 onChange={(e) => setAdminKey(e.target.value)}
-                placeholder="Enter ADMIN_API_KEY..."
+                placeholder="Enter PAYPILOT_ADMIN_KEY..."
                 className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-paypal-blue"
                 autoFocus
               />
             </div>
-            <div className="mt-2 flex items-center justify-between text-[11px]">
-              <span className="text-slate-500 dark:text-slate-400">For hackathon evaluation:</span>
-              <button
-                type="button"
-                onClick={handleUseDefaultDevKey}
-                className="text-paypal-blue dark:text-sky-400 hover:underline font-medium"
-              >
-                Use default judge key
-              </button>
+            <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+              Passcode configured in server environment variable (<code>PAYPILOT_ADMIN_KEY</code>).
             </div>
           </div>
 

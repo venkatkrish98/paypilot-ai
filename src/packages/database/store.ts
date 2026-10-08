@@ -680,6 +680,12 @@ export class DatabaseStore {
     return customer;
   }
 
+  public deleteCustomer(id: string): boolean {
+    const deleted = this.customers.delete(id);
+    if (deleted) this.persistToDisk();
+    return deleted;
+  }
+
   // Payment Goals
   public getGoals(): PaymentGoal[] {
     return Array.from(this.goals.values()).sort(
@@ -696,6 +702,12 @@ export class DatabaseStore {
     this.goals.set(goal.id, goal);
     this.persistToDisk();
     return goal;
+  }
+
+  public deleteGoal(id: string): boolean {
+    const deleted = this.goals.delete(id);
+    if (deleted) this.persistToDisk();
+    return deleted;
   }
 
   public updateGoalStatus(
@@ -807,6 +819,12 @@ export class DatabaseStore {
     this.memories.set(id, mem);
     this.persistToDisk();
     return mem;
+  }
+
+  public deleteMemory(id: string): boolean {
+    const deleted = this.memories.delete(id);
+    if (deleted) this.persistToDisk();
+    return deleted;
   }
 
   // Recommendations

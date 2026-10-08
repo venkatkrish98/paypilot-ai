@@ -38,9 +38,9 @@ export async function GET(req: Request) {
     reviewThreshold: envThreshold,
     storageType: "local_durable_file",
     aiProvider: hasVerified
-      ? "Google Gemini 2.5 Flash (Verified Live)"
+      ? "Google Gemini 3.8 Flash (Verified Live)"
       : isAvailable
-      ? "Google Gemini 2.5 Flash (Configured, Fallback Ready)"
+      ? "Google Gemini 3.8 Flash (Configured, Fallback Ready)"
       : "Deterministic NLP Parser (Offline / Verified Fallback)",
     geminiLiveVerified: hasVerified,
     environmentEnforced: "sandbox",

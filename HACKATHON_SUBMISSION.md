@@ -53,7 +53,7 @@ User Intent ("Collect $1,200 from Sarah by Friday")
        ▼
 ┌────────────────────────────────────────────────────────┐
 │               Agent Orchestrator                       │
-│     (Google Gemini 2.5 Flash / Deterministic Fallback) │
+│     (Google Gemini 3.8 Flash / Deterministic Fallback) │
 └──────┬────────────┬────────────┬───────────┬───────────┘
        │            │            │           │
        ▼            ▼            ▼           ▼
@@ -70,7 +70,7 @@ User Intent ("Collect $1,200 from Sarah by Friday")
        └─────────────┘└──────────┘└───────────────┘
 ```
 
-- **Intent Agent:** Normalizes free-form text into structured intents using Google Gemini 2.5 Flash with verified deterministic fallback.
+- **Intent Agent:** Normalizes free-form text into structured intents using Google Gemini 3.8 Flash with verified deterministic fallback.
 - **Customer Agent:** Resolves recipient identity, billing emails, historical velocities, and outstanding debt.
 - **Risk Agent:** Executes the 5-point Payment Safety check, calculates risk scores (0–100), and routes high-risk tasks to human review.
 - **Payment Agent:** Directly calls the PayPal client to provision Orders v2 sandbox orders and capture references.
@@ -109,7 +109,7 @@ User Intent ("Collect $1,200 from Sarah by Friday")
 ### **[0:35 – 1:20] The Hero Payment Workflow**
 - **Visual:** User clicks "Run Hero Demo Flow" or types in the interactive chat: *"I need to collect $1,200 from Sarah for the website project by Friday."*
 - **Visual:** Real-time capability chain illuminates:
-  - `[Intent Agent]` extracts $1,200 USD and Friday deadline using Gemini 2.5 Flash.
+  - `[Intent Agent]` extracts $1,200 USD and Friday deadline using Gemini 3.8 Flash.
   - `[Customer Agent]` locates Sarah Jenkins (`sarah.jenkins@designcraft.io`).
   - `[Risk Agent]` runs the 5-point Payment Safety check.
   - `[Payment Agent]` generates an official Orders v2 PayPal Sandbox order.
@@ -136,10 +136,10 @@ User Intent ("Collect $1,200 from Sarah by Friday")
 ## 7. Submission Checklist & Independently Verifiable Evidence
 
 - [x] **PayPal Orders v2 Integration & Architecture:** Direct REST integration with `/v1/oauth2/token`, `/v2/checkout/orders`, and capture with amount/currency/status validation and buyer approval enforcement.
-- [x] **In-UI Judge Sandbox Authentication & Safe Execution:** Built-in "Unlock Sandbox" modal in the top header. Evaluators can enter the dev/judge key (`paypal_sandbox_judge_2026` or configured `PAYPILOT_ADMIN_KEY`). The server issues an encrypted `httpOnly` cookie (`paypilot_admin_session`) without exposing secrets to client code. With PayPal credentials configured, authorized UI users can create real PayPal Orders v2 orders, complete buyer approval on PayPal Sandbox, and capture them.
+- [x] **In-UI Administrator Sandbox Authentication & Safe Execution:** Built-in "Unlock Sandbox" modal in the top header. Evaluators can enter the explicitly configured administrator key (`PAYPILOT_ADMIN_KEY`). The server issues a cryptographically signed `httpOnly` cookie (`paypilot_admin_session`) without exposing secrets to client code. Rate limiting and lockout prevent brute-force attacks. With PayPal credentials configured, authorized UI users can create real PayPal Orders v2 orders, complete buyer approval on PayPal Sandbox, and capture them.
 - [x] **Truthful Mode Reporting (`/api/config`):** `/api/config` reports the effective mode available to the current UI session (`mode: "sandbox"` only if PayPal credentials are configured AND current session is admin-authenticated; otherwise strictly `"simulation"`).
-- [x] **Cross-Visitor Data Isolation & Canonical Fixtures:** Anonymous public demo requests are tagged with an isolated `visitorId`. Visitors only see canonical fixtures (`CANONICAL_DEMO_GOAL_IDS`, `CANONICAL_DEMO_CUSTOMER_IDS`, `CANONICAL_DEMO_MEMORY_IDS`, `CANONICAL_DEMO_RECOMMENDATION_IDS`) and their own session records. Dashboard metrics are computed strictly over visible scoped goals.
-- [x] **Google Gemini 2.5 Flash Engine Configured:** Verified SDK integration with `@google/genai` (`GEMINI_API_KEY` configured in `.env`), with automatic verified deterministic fallback.
+- [x] **Cross-Visitor Data Isolation & Canonical Fixtures:** Anonymous public demo requests are tagged with a server-signed `visitorId` cookie. Visitors only see canonical fixtures (`CANONICAL_DEMO_GOAL_IDS`, `CANONICAL_DEMO_CUSTOMER_IDS`, `CANONICAL_DEMO_MEMORY_IDS`, `CANONICAL_DEMO_RECOMMENDATION_IDS`) and their own session records. Dashboard metrics are computed strictly over visible scoped goals.
+- [x] **Google Gemini 3.8 Flash Engine Verified:** Verified live SDK integration with `@google/genai` (`gemini-3.8-flash` with `GEMINI_API_KEY` configured in `.env`), with automatic verified deterministic fallback.
 - [x] **37/37 Automated Regression Tests Passing:** Verified with Vitest (100% green coverage across security, authoritative sandbox provenance, cross-visitor data isolation, UI mode truthfulness, session login/logout, idempotency, ledger, and scoping).
 - [x] **Clean Next.js 14 Build & ESLint:** Zero build errors or linter warnings (`npm run build` and `npm run lint`).
 - [x] **Open-Source Repository:** Public GitHub repository ([venkatkrish98/paypilot-ai](https://github.com/venkatkrish98/paypilot-ai)) with open MIT license.

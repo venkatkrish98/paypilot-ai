@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { defaultOrchestrator } from "@/packages/agent";
-import { checkWriteAuthorization, getVisitorId, isRequestAdmin } from "@/packages/security/auth";
+import {
+  checkWriteAuthorization,
+  isRequestAdmin,
+  resolveVisitorIdentity,
+  attachVisitorCookie,
+} from "@/packages/security/auth";
 import { defaultPayPalClient } from "@/packages/paypal";
 
 export async function POST(req: Request) {
   try {
     const isAdmin = isRequestAdmin(req);
+    const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
     const isSimulationOnly = !isAdmin || !defaultPayPalClient.isConfigured();
-    const visitorId = isAdmin ? undefined : (getVisitorId(req) || undefined);
 
     const auth = checkWriteAuthorization(req, {
       isSimulated: isSimulationOnly,
@@ -26,9 +31,10 @@ export async function POST(req: Request) {
 
     const result = await defaultOrchestrator.execute(query, {
       isSimulationOnly,
-      visitorId,
+      visitorId: isAdmin ? undefined : visitorId,
     });
-    return NextResponse.json(result);
+    const response = NextResponse.json(result);
+    return attachVisitorCookie(response, newCookieToken, isAdmin);
   } catch (error) {
     console.error("Agent execution error:", error);
     return NextResponse.json(

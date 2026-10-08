@@ -40,7 +40,7 @@ export class AgentOrchestrator {
     const plannedIntent = await defaultAIPlanner.plan(userQuery);
 
     steps[steps.length - 1].status = "completed";
-    steps[steps.length - 1].summary = `Extracted intent (${plannedIntent.aiEngine === "gemini" ? "Google Gemini 2.5 Flash" : "Deterministic Fallback"}): ${this.formatIntentSummary(plannedIntent)}`;
+    steps[steps.length - 1].summary = `Extracted intent (${plannedIntent.aiEngine === "gemini" ? "Google Gemini 3.8 Flash" : "Deterministic Fallback"}): ${this.formatIntentSummary(plannedIntent)}`;
 
     // --------------------------------------------------------------------------
     // Routing based on Intent

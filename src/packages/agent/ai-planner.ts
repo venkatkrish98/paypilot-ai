@@ -1,5 +1,5 @@
 // ==============================================================================
-// PayPilot AI - AI Intent & Planning Engine (Google Gemini 2.5 Flash / Fallback)
+// PayPilot AI - AI Intent & Planning Engine (Google Gemini 3.8 Flash / Fallback)
 // Structured intent extraction with deterministic fallback and bounded inputs
 // ==============================================================================
 
@@ -58,7 +58,7 @@ export class AIPlanner {
   }
 
   /**
-   * Extract user intent using Gemini 2.5 Flash if available, otherwise deterministic parser
+   * Extract user intent using Gemini 3.8 Flash if available, otherwise deterministic parser
    */
   public async plan(userQuery: string): Promise<AIPlanningOutput> {
     // 1. Bound and sanitize input

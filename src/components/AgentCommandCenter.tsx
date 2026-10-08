@@ -279,7 +279,7 @@ export const AgentCommandCenter: React.FC<AgentCommandCenterProps> = ({
                         Agent Capability Execution Chain{" "}
                         {msg.aiEngine && (
                           <span className="font-mono text-[8px] text-slate-400">
-                            ({msg.aiEngine === "gemini" ? "Google Gemini 2.5 Flash" : "Deterministic Fallback"})
+                            ({msg.aiEngine === "gemini" ? "Google Gemini 3.8 Flash" : "Deterministic Fallback"})
                           </span>
                         )}
                       </span>

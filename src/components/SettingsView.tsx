@@ -69,11 +69,11 @@ export const SettingsView: React.FC = () => {
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-800 dark:text-slate-200">AI Planning Engine:</span>
               <span className="font-mono text-slate-600 dark:text-slate-400 font-bold text-[11px]">
-                {config?.aiProvider || "Google Gemini 2.5 Flash / Fallback"}
+                {config?.aiProvider || "Google Gemini 3.8 Flash / Fallback"}
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Structured intent extraction uses Gemini 2.5 Flash when GEMINI_API_KEY is present, with an automatic verified deterministic rule-based fallback.
+              Structured intent extraction uses Gemini 3.8 Flash when GEMINI_API_KEY is present, with an automatic verified deterministic rule-based fallback.
             </p>
           </div>
 
