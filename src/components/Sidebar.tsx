@@ -56,7 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const navItems = [
     { id: "dashboard" as NavTab, label: "Dashboard", icon: LayoutDashboard },
-    { id: "agent" as NavTab, label: "AI Command Center", icon: Bot, badge: "Interactive" },
+    { id: "agent" as NavTab, label: "AI Command Center", icon: Bot },
     { id: "goals" as NavTab, label: "Payment Goals", icon: Target },
     { id: "customers" as NavTab, label: "Customers", icon: Users },
     {
@@ -134,27 +134,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onSelectTab(item.id);
                   onCloseMobile();
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold text-left transition-all ${
                   isActive
                     ? "bg-slate-100 dark:bg-slate-800 text-paypal-blue dark:text-white border border-slate-200 dark:border-slate-700 shadow-xs"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                 }`}
               >
-                <div className="flex items-center space-x-2.5">
+                <div className="flex items-center space-x-2.5 min-w-0 text-left">
                   <Icon
-                    className={`w-4 h-4 transition-colors ${
+                    className={`w-4 h-4 shrink-0 transition-colors ${
                       isActive ? "text-paypal-blue dark:text-sky-400" : "text-slate-400"
                     }`}
                   />
-                  <span>{item.label}</span>
+                  <span className="text-left whitespace-nowrap truncate">{item.label}</span>
                 </div>
-                {item.badge && (
-                  <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30">
-                    {item.badge}
-                  </span>
-                )}
                 {item.countBadge !== undefined && item.countBadge > 0 && (
-                  <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/40">
+                  <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/40 shrink-0">
                     {item.countBadge}
                   </span>
                 )}
