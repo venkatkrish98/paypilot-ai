@@ -3,7 +3,7 @@
 // Verifying correct transitions, idempotency, failure handling, and simulation truthfulness
 // ==============================================================================
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { defaultOrchestrator } from "../src/packages/agent";
 import { db } from "../src/packages/database";
 import { defaultSafetyEngine } from "../src/packages/risk";
@@ -15,6 +15,11 @@ import fs from "fs";
 describe("PayPilot AI Test Suite", () => {
   beforeEach(() => {
     // Reset database to initial deterministic demo state before each test
+    db.seedDemoData();
+  });
+
+  afterAll(() => {
+    // Restore pristine demo data after test suite completes
     db.seedDemoData();
   });
 
