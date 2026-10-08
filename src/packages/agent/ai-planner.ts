@@ -68,7 +68,7 @@ export class AIPlanner {
     if (this.isAIAvailable() && this.client) {
       try {
         const response = await this.client.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: "gemini-3.8-flash",
           contents: `Analyze this payment operations request: "${boundedQuery}"`,
           config: {
             systemInstruction: `You are the Intent and Planning Engine for PayPilot AI, a payment agent powered by PayPal.
