@@ -43,6 +43,11 @@ const config: Config = {
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
       },
+      fontSize: {
+        xs: ["14px", { lineHeight: "1.25rem" }],
+        sm: ["16px", { lineHeight: "1.45rem" }],
+        base: ["18px", { lineHeight: "1.65rem" }],
+      },
     },
   },
   plugins: [],
