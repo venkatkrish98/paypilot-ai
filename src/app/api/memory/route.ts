@@ -1,9 +1,23 @@
 import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 
-export async function GET() {
+import { checkReadAuthorization, checkWriteAuthorization } from "@/packages/security/auth";
+
+export async function GET(req: Request) {
   try {
-    const memories = db.getMemories();
+    const readScope = checkReadAuthorization(req);
+    if (!readScope.authorized) {
+      return NextResponse.json(
+        { error: readScope.reason || "Unauthorized" },
+        { status: readScope.statusCode || 401 }
+      );
+    }
+
+    let memories = db.getMemories();
+    if (readScope.scope === "demo_only") {
+      const canonicalIds = new Set(["mem_1", "mem_2", "mem_3"]);
+      memories = memories.filter((m) => canonicalIds.has(m.id));
+    }
     return NextResponse.json({ memories });
   } catch (error) {
     return NextResponse.json(
@@ -13,11 +27,12 @@ export async function GET() {
   }
 }
 
-import { checkWriteAuthorization } from "@/packages/security/auth";
-
 export async function POST(req: Request) {
   try {
-    const auth = checkWriteAuthorization(req);
+    const auth = checkWriteAuthorization(req, {
+      isSimulated: true,
+      action: "create",
+    });
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
     }

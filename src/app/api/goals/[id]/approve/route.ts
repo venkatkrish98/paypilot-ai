@@ -14,8 +14,9 @@ export async function POST(
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
     }
 
+    const willBeRealSandbox = !goal.isSimulated || goal.mode === "sandbox" || defaultPayPalClient.isConfigured();
     const auth = checkWriteAuthorization(req, {
-      isSimulated: goal.isSimulated,
+      isSimulated: !willBeRealSandbox,
       action: "approve",
     });
     if (!auth.authorized) {
@@ -44,7 +45,6 @@ export async function POST(
     }
 
     const timeNow = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const isLiveSandbox = defaultPayPalClient.isConfigured() && !goal.isSimulated;
 
     // Distinct Flow 1: Payout / Vendor Disbursement Review
     // Safety sign-off recorded only; must NOT reduce vendor balance or add completed payment history
@@ -86,6 +86,20 @@ export async function POST(
     });
     const checkoutUrl = defaultPayPalClient.getCheckoutUrl(paypalOrder);
 
+    // CRITICAL: Make the created PayPal order's actual mode authoritative!
+    // Persist mode and isSimulated directly on the goal and timeline. Never leave a real order attached to a simulated goal.
+    const isOrderSimulated = paypalOrder.isSimulated ?? !defaultPayPalClient.isConfigured();
+    const isLiveSandbox = !isOrderSimulated;
+
+    goal.status = "awaiting_payment";
+    goal.approvalStatus = "approved";
+    goal.approvedAt = new Date().toISOString();
+    goal.approvedBy = "Administrator (User)";
+    goal.isSimulated = isOrderSimulated;
+    goal.mode = isLiveSandbox ? "sandbox" : "simulation";
+    goal.paypalOrderId = paypalOrder.id;
+    goal.paypalPaymentLink = checkoutUrl;
+
     const approveEvent: TimelineEvent = {
       id: `t_appr_${Date.now()}`,
       timestamp: timeNow,
@@ -94,15 +108,8 @@ export async function POST(
       description: `Administrator authorized collection order of $${goal.amount.toLocaleString()}. Generated ${
         isLiveSandbox ? "PayPal Sandbox" : "Simulated"
       } order ${paypalOrder.id}.`,
-      isSimulated: !isLiveSandbox,
+      isSimulated: isOrderSimulated,
     };
-
-    goal.status = "awaiting_payment";
-    goal.approvalStatus = "approved";
-    goal.approvedAt = new Date().toISOString();
-    goal.approvedBy = "Administrator (User)";
-    goal.paypalOrderId = paypalOrder.id;
-    goal.paypalPaymentLink = checkoutUrl;
     goal.timeline.push(approveEvent);
 
     db.saveGoal(goal);
@@ -114,7 +121,7 @@ export async function POST(
       message: `Collection goal of $${goal.amount.toLocaleString()} approved. ${
         isLiveSandbox ? "PayPal Sandbox" : "Simulated"
       } Order ${paypalOrder.id} ready.`,
-      isSimulated: !isLiveSandbox,
+      isSimulated: isOrderSimulated,
     });
   } catch (error) {
     return NextResponse.json(

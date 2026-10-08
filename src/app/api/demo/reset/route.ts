@@ -4,7 +4,10 @@ import { checkWriteAuthorization } from "@/packages/security/auth";
 
 export async function POST(req: Request) {
   try {
-    const auth = checkWriteAuthorization(req);
+    const auth = checkWriteAuthorization(req, {
+      isSimulated: true,
+      action: "reset",
+    });
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
     }

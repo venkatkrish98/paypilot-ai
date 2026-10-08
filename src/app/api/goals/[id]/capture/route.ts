@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 import { defaultPayPalClient } from "@/packages/paypal";
 import { TimelineEvent } from "@/packages/types";
-import { checkWriteAuthorization } from "@/packages/security/auth";
+import { checkWriteAuthorization, validateOrderProvenance } from "@/packages/security/auth";
 
 export async function POST(
   req: Request,
@@ -14,9 +14,20 @@ export async function POST(
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
     }
 
-    // 1. Simulation route safety check: Reject real sandbox orders from simulation route
+    // 1. Order Provenance Validation: Reject inconsistent or corrupted states
+    const provenance = validateOrderProvenance(goal);
+    if (!provenance.valid) {
+      return NextResponse.json(
+        { error: provenance.reason || "Inconsistent payment order provenance rejected." },
+        { status: 400 }
+      );
+    }
+
+    const isRealSandboxOrder = provenance.isRealSandbox;
+
+    // 2. Simulation route safety check: Reject real sandbox orders from simulation route
     const isSimulationCheckout = req.headers.get("x-simulation-checkout") === "true";
-    if (!goal.isSimulated && isSimulationCheckout) {
+    if (isRealSandboxOrder && isSimulationCheckout) {
       return NextResponse.json(
         {
           error:
@@ -26,9 +37,9 @@ export async function POST(
       );
     }
 
-    // 2. Real authorization check: Anonymous callers can NEVER capture real Sandbox orders
+    // 3. Real authorization check: Anonymous callers can NEVER capture real Sandbox orders
     const auth = checkWriteAuthorization(req, {
-      isSimulated: goal.isSimulated,
+      isSimulated: !isRealSandboxOrder,
       action: "capture",
     });
     if (!auth.authorized) {
@@ -70,7 +81,14 @@ export async function POST(
     }
 
     const timeNow = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    const isLiveSandbox = defaultPayPalClient.isConfigured() && !goal.isSimulated;
+    if (isRealSandboxOrder && !defaultPayPalClient.isConfigured()) {
+      return NextResponse.json(
+        { error: "Cannot capture real PayPal Sandbox order: PayPal Sandbox credentials are not configured in environment." },
+        { status: 400 }
+      );
+    }
+
+    const isLiveSandbox = defaultPayPalClient.isConfigured() && isRealSandboxOrder;
 
     let captureResult;
 

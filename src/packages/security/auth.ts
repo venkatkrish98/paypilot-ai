@@ -114,6 +114,86 @@ export function checkWriteAuthorization(
   return { authorized: true, isAdmin: false, isSimulationOnly: true };
 }
 
+export interface ReadScopeResult {
+  authorized: boolean;
+  isAdmin: boolean;
+  scope: "all" | "demo_only";
+  reason?: string;
+  statusCode?: number;
+}
+
+/**
+ * Protects and scopes read access to customer profiles, payment history, memories, and goals.
+ * - In production without admin key: Scopes reads to canonical demo fixtures and simulation goals.
+ * - In production when DEMO_MODE=false: Fails closed (401).
+ * - Authenticated admins: Full access to all records.
+ * - Development/testing: Full access for developer/evaluator usability.
+ */
+export function checkReadAuthorization(req: Request): ReadScopeResult {
+  const isProduction = process.env.NODE_ENV === "production";
+  const demoModeDisabled = process.env.DEMO_MODE === "false";
+  const isAdmin = isRequestAdmin(req);
+
+  // 1. Authenticated admin has full read access across all environments
+  if (isAdmin) {
+    return { authorized: true, isAdmin: true, scope: "all" };
+  }
+
+  // 2. In production when demo mode is disabled, fail closed
+  if (isProduction && demoModeDisabled) {
+    return {
+      authorized: false,
+      isAdmin: false,
+      scope: "demo_only",
+      reason: "Unauthorized: Read access requires administrative authentication when demo mode is disabled.",
+      statusCode: 401,
+    };
+  }
+
+  // 3. In production with demo mode active, scope reads to canonical demo fixtures & simulation goals only
+  if (isProduction) {
+    return { authorized: true, isAdmin: false, scope: "demo_only" };
+  }
+
+  // 4. In development and test environments, allow full access for evaluator usability
+  return { authorized: true, isAdmin: false, scope: "all" };
+}
+
+/**
+ * Validates payment order provenance.
+ * Rejects inconsistent states:
+ * - Real PayPal order ID on a simulation goal
+ * - Simulated order ID on a Sandbox goal
+ */
+export function validateOrderProvenance(goal: {
+  isSimulated?: boolean;
+  mode?: string;
+  paypalOrderId?: string;
+}): { valid: boolean; reason?: string; isRealSandbox: boolean } {
+  const orderId = goal.paypalOrderId || "";
+  const isSimOrderId = orderId.startsWith("SIMULATED_");
+
+  if (orderId) {
+    if ((goal.isSimulated || goal.mode === "simulation") && !isSimOrderId) {
+      return {
+        valid: false,
+        reason: "Inconsistent payment provenance: Goal is flagged as simulation, but carries a real PayPal order ID.",
+        isRealSandbox: true,
+      };
+    }
+    if ((!goal.isSimulated || goal.mode === "sandbox") && isSimOrderId) {
+      return {
+        valid: false,
+        reason: "Inconsistent payment provenance: Goal is flagged as PayPal Sandbox, but carries a simulated order ID.",
+        isRealSandbox: false,
+      };
+    }
+  }
+
+  const isRealSandbox = !goal.isSimulated || goal.mode === "sandbox" || (orderId ? !isSimOrderId : false);
+  return { valid: true, isRealSandbox };
+}
+
 /**
  * Checks whether the incoming request carries verified administrative credentials.
  */

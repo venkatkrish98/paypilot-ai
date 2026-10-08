@@ -1,14 +1,26 @@
 import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
-import { checkWriteAuthorization } from "@/packages/security/auth";
+import { checkReadAuthorization, checkWriteAuthorization, isRequestAdmin } from "@/packages/security/auth";
 import { defaultPayPalClient } from "@/packages/paypal";
 import { defaultSafetyEngine } from "@/packages/risk";
 import { parseRelativeDate } from "@/packages/agent/ai-planner";
 import { PaymentGoal, TimelineEvent } from "@/packages/types";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const goals = db.getGoals();
+    const readScope = checkReadAuthorization(req);
+    if (!readScope.authorized) {
+      return NextResponse.json(
+        { error: readScope.reason || "Unauthorized" },
+        { status: readScope.statusCode || 401 }
+      );
+    }
+
+    let goals = db.getGoals();
+    if (readScope.scope === "demo_only") {
+      // In demo mode for unauthenticated callers, scope to simulation goals & demo fixtures
+      goals = goals.filter((g) => g.isSimulated || g.isDemoFixture);
+    }
     const metrics = db.getMetrics();
     return NextResponse.json({ goals, metrics });
   } catch (error) {
@@ -21,7 +33,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const isLive = defaultPayPalClient.isConfigured();
+    const isAdmin = isRequestAdmin(req);
+    const isLive = isAdmin && defaultPayPalClient.isConfigured();
     const isSimulated = !isLive;
 
     const auth = checkWriteAuthorization(req, {
@@ -101,6 +114,7 @@ export async function POST(req: Request) {
         currency,
         description: purpose,
         customerEmail: customer.email,
+        forceSimulation: !isLive,
       });
       orderId = order.id;
       paymentLink = defaultPayPalClient.getCheckoutUrl(order);

@@ -7,7 +7,7 @@
 [![Next.js 14](https://img.shields.io/badge/Next.js-14.2%20App%20Router-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38BDF8?logo=tailwind-css)](https://tailwindcss.com)
-[![Tests Passing](https://img.shields.io/badge/Tests-29%2F29%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
+[![Tests Passing](https://img.shields.io/badge/Tests-33%2F33%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
 [![ESLint Passing](https://img.shields.io/badge/ESLint-Clean-brightgreen?logo=eslint)](https://eslint.org)
 
 ---
@@ -205,7 +205,7 @@ Run the automated test suite:
 npm test
 ```
 
-### Covered Test Cases (29/29 Passing):
+### Covered Test Cases (33/33 Passing):
 1. `Create payment goal` — Parameter verification and storage.
 2. `Customer lookup` — Profile resolution and payment history retrieval.
 3. `Truthful Simulation labeling` — Orders marked `SIMULATED_ORD_...` with in-app simulation checkout preview.
@@ -235,18 +235,23 @@ npm test
 27. `API route handler protection` — Admin authorization verified at the route handler level in production.
 28. `Simulation route sandbox isolation` — Rejects real Sandbox goals from `/checkout/simulation` route.
 29. `Sandbox mutation access denied to anonymous` — Anonymous callers strictly forbidden from approving or capturing real Sandbox orders.
+30. `Authoritative Sandbox transition on approval` — Real PayPal Sandbox order creation authoritatively updates goal and timeline mode to sandbox (`isSimulated: false`); rejects anonymous simulation checkout/capture; enforces buyer approval before capture.
+31. `Inconsistent order provenance rejection` — Rejects mismatched combinations (real PayPal ID on simulated goal or simulated order ID on Sandbox goal).
+32. `Production read API scoping` — Protects customer profiles, notes, payment history, memories, and real sandbox goals from unauthenticated public visitors in production.
+33. `Production demo agent workflow isolation` — Anonymous agent prompts in public demo mode execute safely isolated strictly to simulation data without exposing admin keys.
 
 ---
 
 ## Current Architecture, Persistence Limits & Submission Evidence
 
 - **Runtime Mode:** Operates out of the box in verified **Simulation Mode** (deterministic local engine, zero external network dependency). Switches automatically to **Live PayPal Sandbox** and **Live Google Gemini** once developer credentials are provided in `.env`.
-- **Sandbox Security & Route Isolation:** Real PayPal Sandbox goals can only be approved and captured through official PayPal buyer approval with administrative authorization. The in-app `/checkout/simulation` preview route rejects real Sandbox orders.
+- **Sandbox Security & Order Provenance:** Real PayPal Sandbox goals can only be approved and captured through official PayPal buyer approval with administrative authorization. Validated order provenance prevents stale simulation flags from exposing Sandbox orders to anonymous capture.
+- **Production Demo Security:** Anonymous visitors in hosted production are strictly scoped to canonical demo fixtures and simulation data; sensitive customer notes, emails, payment histories, and real sandbox transactions are never leaked.
 - **Truthful Payout Review Ledger:** Payout review approval records internal safety sign-off only; vendor balances remain unchanged and no completed payment records are added without real PayPal Payouts execution.
 - **Local File Persistence:** Data is stored in `data/paypilot_db.json`. Demo reset restores canonical fixtures while preserving all non-demo user goals, customers, memories, and recommendations of arbitrary IDs.
 - **Required Submission Evidence (Owner Checklist):**
   - [x] Public GitHub repository with open-source MIT license (`https://github.com/venkatkrish98/paypilot-ai`).
-  - [x] Complete automated test suite (29/29 passing) and clean production build.
+  - [x] Complete automated test suite (33/33 passing) and clean production build.
   - [ ] Live PayPal Sandbox Client ID & Secret configured for live judge testing.
   - [ ] Live Google Gemini API Key configured for live LLM planning.
   - [ ] Publicly hosted deployment URL (e.g. Vercel / Cloud Run).

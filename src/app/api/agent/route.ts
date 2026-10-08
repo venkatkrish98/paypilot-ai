@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import { defaultOrchestrator } from "@/packages/agent";
-import { checkWriteAuthorization } from "@/packages/security/auth";
+import { checkWriteAuthorization, isRequestAdmin } from "@/packages/security/auth";
+import { defaultPayPalClient } from "@/packages/paypal";
 
 export async function POST(req: Request) {
   try {
-    const auth = checkWriteAuthorization(req);
+    const isAdmin = isRequestAdmin(req);
+    const isSimulationOnly = !isAdmin || !defaultPayPalClient.isConfigured();
+
+    const auth = checkWriteAuthorization(req, {
+      isSimulated: isSimulationOnly,
+      action: "create",
+    });
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
     }
@@ -16,7 +23,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
     }
 
-    const result = await defaultOrchestrator.execute(query);
+    const result = await defaultOrchestrator.execute(query, {
+      isSimulationOnly,
+    });
     return NextResponse.json(result);
   } catch (error) {
     console.error("Agent execution error:", error);

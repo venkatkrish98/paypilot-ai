@@ -110,12 +110,13 @@ export class PayPalClient {
     returnUrl?: string;
     cancelUrl?: string;
     customerEmail?: string;
+    forceSimulation?: boolean;
   }): Promise<PayPalOrderResponse> {
     const currency = params.currency || "USD";
     const amountVal = params.amount.toFixed(2);
 
     // 1. Simulation Path: Unmistakably labeled as simulated
-    if (!this.isConfigured()) {
+    if (params.forceSimulation || !this.isConfigured()) {
       const mockOrderId = `SIMULATED_ORD_${Date.now().toString(36).toUpperCase()}_${Math.floor(1000 + Math.random() * 9000)}`;
       return {
         id: mockOrderId,

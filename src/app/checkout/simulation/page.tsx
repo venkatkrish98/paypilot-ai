@@ -51,7 +51,12 @@ function SimulationCheckoutContent() {
 
         if (matched) {
           // STRICT REJECTION: Simulation checkout is restricted to simulated goals only
-          if (!matched.isSimulated || matched.mode === "sandbox") {
+          const isRealOrder =
+            !matched.isSimulated ||
+            matched.mode === "sandbox" ||
+            Boolean(matched.paypalOrderId && !matched.paypalOrderId.startsWith("SIMULATED_"));
+
+          if (isRealOrder) {
             setError(
               "Simulation Checkout is strictly restricted to simulated goals. Real PayPal Sandbox orders must be approved through the official PayPal Sandbox checkout flow."
             );
@@ -70,6 +75,15 @@ function SimulationCheckoutContent() {
             });
           }
         } else {
+          // If an order ID was provided and it is NOT a simulated order, reject it
+          if (orderId && !orderId.startsWith("SIMULATED_")) {
+            setError(
+              "The provided Order ID represents a real PayPal order. Real PayPal Sandbox orders cannot be accessed or captured through the simulation checkout route."
+            );
+            setGoal(null);
+            return;
+          }
+
           // If no match found by ID, find any simulation goal or create placeholder representation
           const fallbackGoal = goals.find((g) => g.isSimulated) || null;
           if (fallbackGoal && !orderId) {

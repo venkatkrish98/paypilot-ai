@@ -979,5 +979,401 @@ describe("PayPilot AI Test Suite", () => {
     const approveJson = await approveRes.json();
     expect(approveJson.error).toContain("Real PayPal Sandbox operations require administrative authorization");
   });
+
+  // 30. Regression: Pending simulated goal -> Sandbox credentials enabled -> Approved transitions authoritatively
+  // to mode: "sandbox" and isSimulated: false; anonymous simulation checkout/capture is rejected;
+  // authenticated capture requires buyer approval; simulation capture still works without credentials.
+  it("30. should authoritatively transition simulated pending goal to Sandbox upon approval with credentials, reject anonymous checkout/capture, and enforce buyer approval", async () => {
+    const origClientId = process.env.PAYPAL_CLIENT_ID;
+    const origClientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    const origAdminKey = process.env.PAYPILOT_ADMIN_KEY;
+
+    try {
+      // Step A: Create a pending simulated goal
+      const pendingSimGoal: PaymentGoal = {
+        id: "goal_regress_sim_to_sandbox",
+        goal: "Collect $1,500 from Enterprise Client",
+        goalType: "collection",
+        customer: "Enterprise Client",
+        amount: 1500,
+        currency: "USD",
+        status: "pending_approval",
+        mode: "simulation",
+        isSimulated: true,
+        riskLevel: "high",
+        riskScore: 75,
+        riskChecks: [],
+        requiresApproval: true,
+        approvalStatus: "pending",
+        createdBy: "user",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      };
+      db.saveGoal(pendingSimGoal);
+
+      // Step B: Enable Sandbox credentials and mock PayPal client calls
+      process.env.PAYPILOT_ADMIN_KEY = "super_admin_secret_999";
+      vi.spyOn(defaultPayPalClient, "isConfigured").mockReturnValue(true);
+      vi.spyOn(defaultPayPalClient, "createOrder").mockResolvedValue({
+        id: "REAL_SANDBOX_ORD_987654321",
+        status: "CREATED",
+        intent: "CAPTURE",
+        isSimulated: false,
+        mode: "sandbox",
+        create_time: new Date().toISOString(),
+        links: [
+          { href: "https://www.sandbox.paypal.com/checkoutnow?token=REAL_SANDBOX_ORD_987654321", rel: "approve", method: "GET" },
+        ],
+      });
+
+      // Step C: Anonymous approval must be REJECTED because credentials are now active
+      const { POST: approvePost } = await import("../src/app/api/goals/[id]/approve/route");
+      const anonApproveReq = new Request("http://localhost:3000/api/goals/goal_regress_sim_to_sandbox/approve", {
+        method: "POST",
+      });
+      const anonApproveRes = await approvePost(anonApproveReq, { params: { id: "goal_regress_sim_to_sandbox" } });
+      expect(anonApproveRes.status).toBe(401);
+
+      // Step D: Authenticated admin approval succeeds and authoritatively transitions goal to sandbox
+      const adminApproveReq = new Request("http://localhost:3000/api/goals/goal_regress_sim_to_sandbox/approve", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer super_admin_secret_999",
+        },
+      });
+      const adminApproveRes = await approvePost(adminApproveReq, { params: { id: "goal_regress_sim_to_sandbox" } });
+      expect(adminApproveRes.status).toBe(200);
+
+      const approvedGoal = db.getGoalById("goal_regress_sim_to_sandbox")!;
+      expect(approvedGoal.status).toBe("awaiting_payment");
+      expect(approvedGoal.mode).toBe("sandbox");
+      expect(approvedGoal.isSimulated).toBe(false);
+      expect(approvedGoal.paypalOrderId).toBe("REAL_SANDBOX_ORD_987654321");
+      expect(approvedGoal.paypalPaymentLink).toContain("sandbox.paypal.com");
+
+      // Verify timeline event has authoritative sandbox provenance
+      const orderEvent = approvedGoal.timeline.find((t) => t.stage === "order_created");
+      expect(orderEvent).toBeDefined();
+      expect(orderEvent?.isSimulated).toBe(false);
+
+      // Step E: Anonymous simulation checkout capture must be REJECTED
+      const { POST: capturePost } = await import("../src/app/api/goals/[id]/capture/route");
+      const anonSimCaptureReq = new Request("http://localhost:3000/api/goals/goal_regress_sim_to_sandbox/capture", {
+        method: "POST",
+        headers: {
+          "x-simulation-checkout": "true",
+        },
+      });
+      const anonSimRes = await capturePost(anonSimCaptureReq, { params: { id: "goal_regress_sim_to_sandbox" } });
+      expect(anonSimRes.status).toBe(400);
+      const anonSimJson = await anonSimRes.json();
+      expect(anonSimJson.error).toContain("Real PayPal Sandbox orders cannot be captured from the simulation checkout route");
+
+      // Step F: Anonymous general capture must be REJECTED with 401
+      const anonCaptureReq = new Request("http://localhost:3000/api/goals/goal_regress_sim_to_sandbox/capture", {
+        method: "POST",
+      });
+      const anonCaptureRes = await capturePost(anonCaptureReq, { params: { id: "goal_regress_sim_to_sandbox" } });
+      expect(anonCaptureRes.status).toBe(401);
+
+      // Step G: Authenticated capture before buyer approval must fail safely without marking paid
+      vi.spyOn(defaultPayPalClient, "captureOrder").mockRejectedValueOnce(
+        new Error("ORDER_NOT_APPROVED: Buyer has not yet authorized this payment order on PayPal Sandbox.")
+      );
+      const adminPreApprovalReq = new Request("http://localhost:3000/api/goals/goal_regress_sim_to_sandbox/capture", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer super_admin_secret_999",
+        },
+      });
+      const adminPreApprovalRes = await capturePost(adminPreApprovalReq, { params: { id: "goal_regress_sim_to_sandbox" } });
+      expect(adminPreApprovalRes.status).toBe(502);
+      expect(db.getGoalById("goal_regress_sim_to_sandbox")?.status).toBe("awaiting_payment");
+
+      // Step H: Authenticated capture after buyer approval completes successfully
+      vi.spyOn(defaultPayPalClient, "captureOrder").mockResolvedValueOnce({
+        id: "CAP_SANDBOX_REAL_777",
+        status: "COMPLETED",
+        amount: {
+          value: "1500.00",
+          currency_code: "USD",
+        },
+      });
+      const adminPostApprovalReq = new Request("http://localhost:3000/api/goals/goal_regress_sim_to_sandbox/capture", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer super_admin_secret_999",
+        },
+      });
+      const adminPostApprovalRes = await capturePost(adminPostApprovalReq, { params: { id: "goal_regress_sim_to_sandbox" } });
+      expect(adminPostApprovalRes.status).toBe(200);
+
+      const capturedGoal = db.getGoalById("goal_regress_sim_to_sandbox")!;
+      expect(capturedGoal.status).toBe("paid");
+      expect(capturedGoal.isSimulated).toBe(false);
+
+      // Step I: Simulation capture still works when credentials are absent
+      vi.spyOn(defaultPayPalClient, "isConfigured").mockReturnValue(false);
+      const pendingSimPure: PaymentGoal = {
+        id: "goal_pure_simulation_test",
+        goal: "Collect $500 simulated",
+        goalType: "collection",
+        customer: "Simulation User",
+        amount: 500,
+        currency: "USD",
+        status: "awaiting_payment",
+        mode: "simulation",
+        isSimulated: true,
+        paypalOrderId: "SIMULATED_ORD_PURE_123",
+        riskLevel: "low",
+        riskScore: 10,
+        riskChecks: [],
+        requiresApproval: false,
+        createdBy: "user",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+      };
+      db.saveGoal(pendingSimPure);
+
+      const anonPureSimReq = new Request("http://localhost:3000/api/goals/goal_pure_simulation_test/capture", {
+        method: "POST",
+        headers: {
+          "x-simulation-checkout": "true",
+        },
+      });
+      const pureSimRes = await capturePost(anonPureSimReq, { params: { id: "goal_pure_simulation_test" } });
+      expect(pureSimRes.status).toBe(200);
+      expect(db.getGoalById("goal_pure_simulation_test")?.status).toBe("paid");
+      expect(db.getGoalById("goal_pure_simulation_test")?.isSimulated).toBe(true);
+    } finally {
+      vi.restoreAllMocks();
+      if (origClientId !== undefined) process.env.PAYPAL_CLIENT_ID = origClientId;
+      else delete process.env.PAYPAL_CLIENT_ID;
+      if (origClientSecret !== undefined) process.env.PAYPAL_CLIENT_SECRET = origClientSecret;
+      else delete process.env.PAYPAL_CLIENT_SECRET;
+      if (origAdminKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = origAdminKey;
+      else delete process.env.PAYPILOT_ADMIN_KEY;
+    }
+  });
+
+  // 31. Reject inconsistent order provenance states
+  it("31. should reject inconsistent order provenance states on capture and checkout", async () => {
+    const { POST: capturePost } = await import("../src/app/api/goals/[id]/capture/route");
+
+    // Case A: Simulation goal with real-looking PayPal order ID
+    const corruptGoalA: PaymentGoal = {
+      id: "goal_corrupt_provenance_a",
+      goal: "Corrupted provenance A",
+      goalType: "collection",
+      customer: "Test",
+      amount: 100,
+      currency: "USD",
+      status: "awaiting_payment",
+      mode: "simulation",
+      isSimulated: true,
+      paypalOrderId: "REAL_SANDBOX_ORDER_ID_ABC",
+      riskLevel: "low",
+      riskScore: 10,
+      riskChecks: [],
+      requiresApproval: false,
+      createdBy: "user",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeline: [],
+    };
+    db.saveGoal(corruptGoalA);
+
+    const reqA = new Request("http://localhost:3000/api/goals/goal_corrupt_provenance_a/capture", { method: "POST" });
+    const resA = await capturePost(reqA, { params: { id: "goal_corrupt_provenance_a" } });
+    expect(resA.status).toBe(400);
+    const jsonA = await resA.json();
+    expect(jsonA.error).toContain("Inconsistent payment provenance");
+
+    // Case B: Sandbox goal with simulated order ID
+    const corruptGoalB: PaymentGoal = {
+      id: "goal_corrupt_provenance_b",
+      goal: "Corrupted provenance B",
+      goalType: "collection",
+      customer: "Test",
+      amount: 100,
+      currency: "USD",
+      status: "awaiting_payment",
+      mode: "sandbox",
+      isSimulated: false,
+      paypalOrderId: "SIMULATED_ORD_XYZ_999",
+      riskLevel: "low",
+      riskScore: 10,
+      riskChecks: [],
+      requiresApproval: false,
+      createdBy: "user",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeline: [],
+    };
+    db.saveGoal(corruptGoalB);
+
+    const reqB = new Request("http://localhost:3000/api/goals/goal_corrupt_provenance_b/capture", { method: "POST" });
+    const resB = await capturePost(reqB, { params: { id: "goal_corrupt_provenance_b" } });
+    expect(resB.status).toBe(400);
+    const jsonB = await resB.json();
+    expect(jsonB.error).toContain("Inconsistent payment provenance");
+  });
+
+  // 32. Production read authorization scoping protects sensitive customer records, memories, and real transactions
+  it("32. should protect and scope read APIs in production for anonymous visitors while granting full access to admins", async () => {
+    const origNodeEnv = process.env.NODE_ENV;
+    const origDemoMode = process.env.DEMO_MODE;
+    const origAdminKey = process.env.PAYPILOT_ADMIN_KEY;
+
+    try {
+      process.env.NODE_ENV = "production";
+      delete process.env.DEMO_MODE; // Default public demo enabled
+      process.env.PAYPILOT_ADMIN_KEY = "prod_admin_secret_555";
+
+      // Create a private non-demo customer
+      db.saveCustomer({
+        id: "cust_private_corp",
+        name: "Private Corp",
+        email: "confidential@privatecorp.com",
+        outstandingAmount: 50000,
+        riskIndicators: ["Confidential VIP"],
+        isNewRecipient: false,
+        notes: "Strict confidential corporate customer.",
+        paymentHistory: [],
+        isDemoFixture: false,
+      });
+
+      // Create a private memory
+      db.addMemory("private_merchant_pin", "Secret pin 9944", "preference");
+
+      // Create a real sandbox goal
+      db.saveGoal({
+        id: "goal_real_prod_sandbox",
+        goal: "Real merchant payment",
+        goalType: "collection",
+        customer: "Private Corp",
+        amount: 50000,
+        currency: "USD",
+        status: "awaiting_payment",
+        mode: "sandbox",
+        isSimulated: false,
+        paypalOrderId: "REAL_SANDBOX_ORDER_PRIVATE",
+        riskLevel: "low",
+        riskScore: 10,
+        riskChecks: [],
+        requiresApproval: false,
+        createdBy: "user",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        timeline: [],
+        isDemoFixture: false,
+      });
+
+      const { GET: customersGet } = await import("../src/app/api/customers/route");
+      const { GET: memoryGet } = await import("../src/app/api/memory/route");
+      const { GET: goalsGet } = await import("../src/app/api/goals/route");
+      const { GET: goalByIdGet } = await import("../src/app/api/goals/[id]/route");
+
+      // 1. Anonymous GET customers: strictly demo fixtures
+      const anonCustReq = new Request("http://localhost:3000/api/customers");
+      const anonCustRes = await customersGet(anonCustReq);
+      expect(anonCustRes.status).toBe(200);
+      const anonCustData = await anonCustRes.json();
+      expect(anonCustData.customers.every((c: Customer) => c.isDemoFixture === true)).toBe(true);
+      expect(anonCustData.customers.find((c: Customer) => c.id === "cust_private_corp")).toBeUndefined();
+
+      // 2. Anonymous GET memory: strictly canonical demo memories
+      const anonMemReq = new Request("http://localhost:3000/api/memory");
+      const anonMemRes = await memoryGet(anonMemReq);
+      expect(anonMemRes.status).toBe(200);
+      const anonMemData = await anonMemRes.json();
+      expect(anonMemData.memories.every((m: { id: string }) => ["mem_1", "mem_2", "mem_3"].includes(m.id))).toBe(true);
+
+      // 3. Anonymous GET goals: strictly simulation goals
+      const anonGoalsReq = new Request("http://localhost:3000/api/goals");
+      const anonGoalsRes = await goalsGet(anonGoalsReq);
+      expect(anonGoalsRes.status).toBe(200);
+      const anonGoalsData = await anonGoalsRes.json();
+      expect(anonGoalsData.goals.find((g: PaymentGoal) => g.id === "goal_real_prod_sandbox")).toBeUndefined();
+
+      // 4. Anonymous GET goal by ID for real sandbox goal: 403 Forbidden
+      const anonGoalIdReq = new Request("http://localhost:3000/api/goals/goal_real_prod_sandbox");
+      const anonGoalIdRes = await goalByIdGet(anonGoalIdReq, { params: { id: "goal_real_prod_sandbox" } });
+      expect(anonGoalIdRes.status).toBe(403);
+
+      // 5. Authenticated Admin GET: full access
+      const adminCustReq = new Request("http://localhost:3000/api/customers", {
+        headers: { authorization: "Bearer prod_admin_secret_555" },
+      });
+      const adminCustRes = await customersGet(adminCustReq);
+      const adminCustData = await adminCustRes.json();
+      expect(adminCustData.customers.find((c: Customer) => c.id === "cust_private_corp")).toBeDefined();
+
+      const adminGoalsReq = new Request("http://localhost:3000/api/goals", {
+        headers: { authorization: "Bearer prod_admin_secret_555" },
+      });
+      const adminGoalsRes = await goalsGet(adminGoalsReq);
+      const adminGoalsData = await adminGoalsRes.json();
+      expect(adminGoalsData.goals.find((g: PaymentGoal) => g.id === "goal_real_prod_sandbox")).toBeDefined();
+
+      // 6. Production fail-closed when DEMO_MODE=false
+      process.env.DEMO_MODE = "false";
+      const closedReq = new Request("http://localhost:3000/api/goals");
+      const closedRes = await goalsGet(closedReq);
+      expect(closedRes.status).toBe(401);
+    } finally {
+      if (origNodeEnv !== undefined) process.env.NODE_ENV = origNodeEnv;
+      else delete process.env.NODE_ENV;
+      if (origDemoMode !== undefined) process.env.DEMO_MODE = origDemoMode;
+      else delete process.env.DEMO_MODE;
+      if (origAdminKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = origAdminKey;
+      else delete process.env.PAYPILOT_ADMIN_KEY;
+    }
+  });
+
+  // 33. Production demo agent workflow is safe and isolated to simulation data
+  it("33. should allow agent workflow in production demo isolated strictly to simulation data", async () => {
+    const origNodeEnv = process.env.NODE_ENV;
+    const origDemoMode = process.env.DEMO_MODE;
+    const origAdminKey = process.env.PAYPILOT_ADMIN_KEY;
+
+    try {
+      process.env.NODE_ENV = "production";
+      delete process.env.DEMO_MODE;
+      process.env.PAYPILOT_ADMIN_KEY = "admin_secret_key_888";
+
+      // Mock PayPal credentials present on server to test isolation
+      vi.spyOn(defaultPayPalClient, "isConfigured").mockReturnValue(true);
+
+      const { POST: agentPost } = await import("../src/app/api/agent/route");
+
+      // Anonymous prompt in production demo
+      const agentReq = new Request("http://localhost:3000/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: "Collect $300 from Alex Rivera for branding by Friday" }),
+      });
+
+      const agentRes = await agentPost(agentReq);
+      expect(agentRes.status).toBe(200);
+      const agentData = await agentRes.json();
+      expect(agentData.success).toBe(true);
+
+      // Verify the resulting goal is strictly simulation
+      expect(agentData.goal.isSimulated).toBe(true);
+      expect(agentData.goal.mode).toBe("simulation");
+      expect(agentData.goal.paypalOrderId).toMatch(/^SIMULATED_ORD_/);
+    } finally {
+      vi.restoreAllMocks();
+      if (origNodeEnv !== undefined) process.env.NODE_ENV = origNodeEnv;
+      else delete process.env.NODE_ENV;
+      if (origDemoMode !== undefined) process.env.DEMO_MODE = origDemoMode;
+      else delete process.env.DEMO_MODE;
+      if (origAdminKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = origAdminKey;
+      else delete process.env.PAYPILOT_ADMIN_KEY;
+    }
+  });
 });
 

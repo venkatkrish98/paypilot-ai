@@ -1,10 +1,21 @@
 import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
-import { checkWriteAuthorization } from "@/packages/security/auth";
+import { checkReadAuthorization, checkWriteAuthorization } from "@/packages/security/auth";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const customers = db.getCustomers();
+    const readScope = checkReadAuthorization(req);
+    if (!readScope.authorized) {
+      return NextResponse.json(
+        { error: readScope.reason || "Unauthorized" },
+        { status: readScope.statusCode || 401 }
+      );
+    }
+
+    let customers = db.getCustomers();
+    if (readScope.scope === "demo_only") {
+      customers = customers.filter((c) => c.isDemoFixture);
+    }
     return NextResponse.json({ customers });
   } catch (error) {
     return NextResponse.json(
@@ -16,7 +27,10 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const auth = checkWriteAuthorization(req);
+    const auth = checkWriteAuthorization(req, {
+      isSimulated: true,
+      action: "create",
+    });
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
     }

@@ -140,7 +140,7 @@ User Intent ("Collect $1,200 from Sarah by Friday")
 - [x] **Truthful Simulation Path:** Clearly distinguished simulation mode with in-app simulation checkout preview and strict route isolation.
 - [x] **Multi-Agent Orchestration & Planning:** 7-agent capability pipeline with structured intent extraction and 5-point Payment Safety heuristic engine.
 - [ ] **Live Google Gemini 2.5 Flash API Key Verification:** Full SDK integration with `@google/genai`; verified deterministic fallback engine active until live API key is configured.
-- [x] **29/29 Automated Regression Tests Passing:** Verified with Vitest (100% green coverage across security, idempotency, ledger, and sandbox isolation).
+- [x] **33/33 Automated Regression Tests Passing:** Verified with Vitest (100% green coverage across security, authoritative sandbox provenance, idempotency, ledger, read scoping, and sandbox isolation).
 - [x] **Clean Next.js 14 Build & ESLint:** Zero build errors or linter warnings (`npm run build` and `npm run lint`).
 - [x] **Open-Source Repository:** Public GitHub repository (`https://github.com/venkatkrish98/paypilot-ai`) with open MIT license.
 - [ ] **Hosted Live Production Deployment:** Code production-ready; live public URL (Vercel / Cloud Run) to be configured by project owner.

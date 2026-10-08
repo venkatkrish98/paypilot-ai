@@ -19,7 +19,10 @@ export class AgentOrchestrator {
   /**
    * Main entrypoint: Processes user prompt through specialized capability agents
    */
-  public async execute(userQuery: string): Promise<AgentOrchestratorResult> {
+  public async execute(
+    userQuery: string,
+    options?: { isSimulationOnly?: boolean }
+  ): Promise<AgentOrchestratorResult> {
     const steps: AgentStep[] = [];
     const now = new Date();
     const timeNow = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -68,7 +71,7 @@ export class AgentOrchestrator {
       plannedIntent.action === "create_collection_goal" ||
       plannedIntent.action === "create_payout_review"
     ) {
-      return this.handlePaymentWorkflow(plannedIntent, steps, userQuery);
+      return this.handlePaymentWorkflow(plannedIntent, steps, userQuery, options?.isSimulationOnly);
     }
 
     // Fallback: Default intelligent guidance
@@ -100,7 +103,8 @@ export class AgentOrchestrator {
   private async handlePaymentWorkflow(
     intent: AIPlanningOutput,
     steps: AgentStep[],
-    userQuery: string
+    userQuery: string,
+    isSimulationOnly?: boolean
   ): Promise<AgentOrchestratorResult> {
     const timeNow = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const amount = intent.amount || 1200;
@@ -111,8 +115,8 @@ export class AgentOrchestrator {
     const isPayout = intent.action === "create_payout_review";
     const goalType: GoalType = isPayout ? "payout_review" : "collection";
 
-    const isLiveSandbox = defaultPayPalClient.isConfigured();
-    const mode = defaultPayPalClient.getMode();
+    const isLiveSandbox = !isSimulationOnly && defaultPayPalClient.isConfigured();
+    const mode = isLiveSandbox ? "sandbox" : "simulation";
 
     // 2. CUSTOMER AGENT: Lookup customer and retrieve historical context
     steps.push({
@@ -268,6 +272,7 @@ export class AgentOrchestrator {
       currency,
       description: purpose,
       customerEmail: customer.email,
+      forceSimulation: !isLiveSandbox,
     });
 
     const checkoutUrl = defaultPayPalClient.getCheckoutUrl(paypalOrder);

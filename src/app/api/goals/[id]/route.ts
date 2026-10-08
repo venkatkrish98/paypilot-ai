@@ -2,13 +2,21 @@ import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 import { GoalStatus } from "@/packages/types";
 
-import { checkWriteAuthorization } from "@/packages/security/auth";
+import { checkReadAuthorization, checkWriteAuthorization } from "@/packages/security/auth";
 
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
+    const readScope = checkReadAuthorization(req);
+    if (!readScope.authorized) {
+      return NextResponse.json(
+        { error: readScope.reason || "Unauthorized" },
+        { status: readScope.statusCode || 401 }
+      );
+    }
+
     if (!params.id || typeof params.id !== "string") {
       return NextResponse.json({ error: "Invalid Goal ID format" }, { status: 400 });
     }
@@ -16,6 +24,14 @@ export async function GET(
     if (!goal) {
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
     }
+
+    if (readScope.scope === "demo_only" && !goal.isSimulated && !goal.isDemoFixture) {
+      return NextResponse.json(
+        { error: "Access restricted: Real PayPal transactions require administrative authentication." },
+        { status: 403 }
+      );
+    }
+
     return NextResponse.json({ goal });
   } catch (error) {
     return NextResponse.json(
