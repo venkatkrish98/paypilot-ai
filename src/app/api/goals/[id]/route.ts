@@ -30,20 +30,24 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const auth = checkWriteAuthorization(req);
-    if (!auth.authorized) {
-      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
-    }
-
     if (!params.id || typeof params.id !== "string") {
       return NextResponse.json({ error: "Invalid Goal ID format" }, { status: 400 });
     }
 
-    const body = await req.json();
     const existing = db.getGoalById(params.id);
     if (!existing) {
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
     }
+
+    const auth = checkWriteAuthorization(req, {
+      isSimulated: existing.isSimulated,
+      action: "update",
+    });
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
+    }
+
+    const body = await req.json();
 
     // Immutable Terminal States
     if (existing.status === "paid" || existing.status === "payout_approved") {

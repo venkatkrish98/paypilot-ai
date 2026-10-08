@@ -90,19 +90,24 @@ export const ApprovalsQueue: React.FC<ApprovalsQueueProps> = ({ goals, onApprove
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-end space-x-2 pt-1">
-                <button
-                  onClick={() => onReject?.(g.id)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition"
-                >
-                  Cancel / Reject
-                </button>
-                <button
-                  onClick={() => onApprove(g.id)}
-                  className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition active:scale-95 shadow-xs"
-                >
-                  Approve Disbursement (${g.amount.toLocaleString()})
-                </button>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] text-slate-400 italic">
+                  * Approval records safety sign-off for review. Payout execution is separate (no live funds dispatched).
+                </span>
+                <div className="flex items-center space-x-2 shrink-0">
+                  <button
+                    onClick={() => onReject?.(g.id)}
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition"
+                  >
+                    Cancel / Reject
+                  </button>
+                  <button
+                    onClick={() => onApprove(g.id)}
+                    className="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition active:scale-95 shadow-xs"
+                  >
+                    Approve for Review (Simulation: ${g.amount.toLocaleString()})
+                  </button>
+                </div>
               </div>
             </div>
           ))}

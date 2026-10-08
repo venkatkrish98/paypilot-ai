@@ -9,14 +9,33 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const auth = checkWriteAuthorization(req);
-    if (!auth.authorized) {
-      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
-    }
-
     const goal = db.getGoalById(params.id);
     if (!goal) {
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
+    }
+
+    // 1. Simulation route safety check: Reject real sandbox orders from simulation route
+    const isSimulationCheckout = req.headers.get("x-simulation-checkout") === "true";
+    if (!goal.isSimulated && isSimulationCheckout) {
+      return NextResponse.json(
+        {
+          error:
+            "Rejection: Real PayPal Sandbox orders cannot be captured from the simulation checkout route. Please complete buyer checkout in PayPal Sandbox.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // 2. Real authorization check: Anonymous callers can NEVER capture real Sandbox orders
+    const auth = checkWriteAuthorization(req, {
+      isSimulated: goal.isSimulated,
+      action: "capture",
+    });
+    if (!auth.authorized) {
+      return NextResponse.json(
+        { error: auth.reason || "Unauthorized" },
+        { status: auth.statusCode || 401 }
+      );
     }
 
     // 1. Idempotency & State Transition Validation

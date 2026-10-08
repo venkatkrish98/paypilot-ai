@@ -1,39 +1,21 @@
 // ==============================================================================
 // PayPilot AI - API Write Protection & Authorization Guard
-// Fail-closed authorization guard for mutation routes
+// Real authorization guard for production mutations and sandbox safety
 // ==============================================================================
+
+import crypto from "crypto";
 
 export interface AuthCheckResult {
   authorized: boolean;
+  isAdmin?: boolean;
   reason?: string;
   statusCode?: number;
-  isBrowserSession?: boolean;
+  isSimulationOnly?: boolean;
 }
 
-// In-memory set of active browser demo session tokens (ephemeral, non-secret)
-const validDemoSessions = new Set<string>();
-
-/**
- * Generates an ephemeral demo session token for same-origin browser clients.
- * Never exposes the server API secret to the client.
- */
-export function generateDemoSessionToken(): string {
-  const token = `paypilot_sess_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 10)}`;
-  validDemoSessions.add(token);
-  // Cap set size to avoid unbounded memory growth
-  if (validDemoSessions.size > 1000) {
-    const oldest = Array.from(validDemoSessions).slice(0, 500);
-    oldest.forEach((t) => validDemoSessions.delete(t));
-  }
-  return token;
-}
-
-/**
- * Validates whether an ephemeral session token was issued to a browser client.
- */
-export function isValidDemoSessionToken(token: string): boolean {
-  if (!token) return false;
-  return validDemoSessions.has(token);
+export interface AuthTargetContext {
+  isSimulated?: boolean;
+  action?: "create" | "update" | "approve" | "capture" | "reset";
 }
 
 /**
@@ -41,17 +23,19 @@ export function isValidDemoSessionToken(token: string): boolean {
  * are permitted for the incoming HTTP request.
  *
  * Security Policy:
- * 1. Fail Closed in Production: In production (NODE_ENV === "production"), unauthenticated
- *    requests are DENIED by default. We do NOT rely on DEMO_MODE=false being set.
- * 2. If PAYPILOT_ADMIN_KEY or PAYPILOT_API_KEY is configured, requests presenting a matching
- *    Bearer token or x-api-key are granted full administrative access.
- * 3. Hosted Browser UI Access: Same-origin browser requests presenting an ephemeral
- *    demo session token (or header x-paypilot-session / cookie) are permitted ONLY when
- *    DEMO_MODE is not explicitly disabled ("false"). Server secrets are NEVER exposed to the client.
- * 4. Local Development: In non-production environments without configured keys, mutations
- *    are permitted to enable local testing and inspection.
+ * 1. Admin Authorization: If PAYPILOT_ADMIN_KEY or PAYPILOT_API_KEY is configured,
+ *    requests presenting a matching Bearer token or x-api-key receive full administrative access.
+ * 2. Real Sandbox Isolation: Anonymous requests can NEVER approve or capture real PayPal Sandbox
+ *    orders (isSimulated === false). Real Sandbox interactions strictly require administrative authorization.
+ * 3. Public Demo Restriction: If the application runs a public demo without user accounts (DEMO_MODE !== "false"),
+ *    anonymous mutations are strictly restricted to disposable simulation data (isSimulated === true).
+ * 4. Production Fail-Closed: If demo mode is explicitly disabled (DEMO_MODE === "false") in production,
+ *    all unauthenticated requests are denied.
  */
-export function checkWriteAuthorization(req: Request): AuthCheckResult {
+export function checkWriteAuthorization(
+  req: Request,
+  context?: AuthTargetContext
+): AuthCheckResult {
   const configuredKey = (process.env.PAYPILOT_ADMIN_KEY || process.env.PAYPILOT_API_KEY || "").trim();
   const isProduction = process.env.NODE_ENV === "production";
   const demoModeDisabled = process.env.DEMO_MODE === "false";
@@ -60,13 +44,16 @@ export function checkWriteAuthorization(req: Request): AuthCheckResult {
   const authHeader = req.headers.get("authorization") || req.headers.get("x-api-key") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
-  // 1. If an Admin API Key is configured and matches, authorize
-  if (configuredKey && token && token === configuredKey) {
-    return { authorized: true };
-  }
+  // 1. If an Admin API Key is configured and matches, grant admin authorization
+  if (configuredKey && token) {
+    const isMatch =
+      token.length === configuredKey.length &&
+      crypto.timingSafeEqual(Buffer.from(token), Buffer.from(configuredKey));
 
-  // 2. If configuredKey is present but the provided token doesn't match
-  if (configuredKey && token && token !== configuredKey) {
+    if (isMatch) {
+      return { authorized: true, isAdmin: true };
+    }
+
     return {
       authorized: false,
       reason: "Unauthorized: Invalid API key provided for PayPilot mutation route.",
@@ -74,61 +61,72 @@ export function checkWriteAuthorization(req: Request): AuthCheckResult {
     };
   }
 
-  // 3. Check for Browser UI session token (via header or cookie)
-  const sessionHeader = req.headers.get("x-paypilot-session") || "";
-  const cookieHeader = req.headers.get("cookie") || "";
-  const sessionFromCookie = cookieHeader
-    .split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith("paypilot_session="))
-    ?.split("=")[1];
+  // 2. If Demo Mode is explicitly disabled, fail closed immediately
+  if (demoModeDisabled) {
+    return {
+      authorized: false,
+      reason: "Forbidden: Demo mutations are disabled. Administrative authentication required.",
+      statusCode: 403,
+    };
+  }
 
-  const clientSession = sessionHeader || sessionFromCookie || "";
-  const isBrowserRequest =
-    req.headers.get("sec-fetch-site") === "same-origin" ||
-    req.headers.get("sec-fetch-mode") === "cors" ||
-    Boolean(req.headers.get("user-agent")?.includes("Mozilla"));
+  // 3. CRITICAL SANDBOX SAFETY RULE:
+  // Anonymous requests CANNOT approve or capture real PayPal Sandbox transactions!
+  // Any real Sandbox operation strictly requires verified administrative credentials.
+  if (context?.isSimulated === false) {
+    return {
+      authorized: false,
+      reason: "Unauthorized: Real PayPal Sandbox operations require administrative authorization.",
+      statusCode: 401,
+    };
+  }
 
-  const hasValidDemoSession = clientSession && isValidDemoSessionToken(clientSession);
-
-  // 4. Production Environment: FAIL CLOSED BY DEFAULT
+  // 4. Production Environment
   if (isProduction) {
-    // If demo mode is explicitly disabled in production, block all non-admin requests
-    if (demoModeDisabled) {
+    // If an admin key is configured and no key was provided:
+    if (configuredKey) {
+      // If action is on a simulation goal and public demo is allowed, permit simulation-only mutation
+      if (context?.isSimulated === true) {
+        return { authorized: true, isAdmin: false, isSimulationOnly: true };
+      }
+
       return {
         authorized: false,
-        reason: "Forbidden: Demo mutations are disabled in production. Admin authentication required.",
-        statusCode: 403,
+        reason: "Unauthorized: Missing administrative credentials for PayPilot mutation route in production.",
+        statusCode: 401,
       };
     }
 
-    // In production, unauthenticated requests fail closed by default.
-    // Browser UI requests are permitted ONLY with a valid active session token issued by /api/auth/session.
-    if (hasValidDemoSession) {
-      return {
-        authorized: true,
-        isBrowserSession: true,
-      };
+    // In production without an admin key configured:
+    // Only allow mutations if they are strictly disposable simulation operations
+    if (context?.isSimulated === true) {
+      return { authorized: true, isAdmin: false, isSimulationOnly: true };
     }
 
-    // Unauthenticated production request fails closed
     return {
       authorized: false,
-      reason: "Unauthorized: Missing authentication credentials for PayPilot mutation route in production.",
+      reason: "Unauthorized: Missing administrative credentials for PayPilot mutation route in production.",
       statusCode: 401,
     };
   }
 
-  // 5. Non-production / Local Development:
-  // If an API key was configured, enforce it
-  if (configuredKey && !token) {
-    return {
-      authorized: false,
-      reason: "Unauthorized: API key required when PAYPILOT_ADMIN_KEY is configured.",
-      statusCode: 401,
-    };
-  }
+  // Permitted in simulation demo
+  return { authorized: true, isAdmin: false, isSimulationOnly: true };
+}
 
-  // Local development demo allowed
-  return { authorized: true };
+/**
+ * Checks whether the incoming request carries verified administrative credentials.
+ */
+export function isRequestAdmin(req: Request): boolean {
+  const configuredKey = (process.env.PAYPILOT_ADMIN_KEY || process.env.PAYPILOT_API_KEY || "").trim();
+  if (!configuredKey) return false;
+
+  const authHeader = req.headers.get("authorization") || req.headers.get("x-api-key") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return false;
+
+  return (
+    token.length === configuredKey.length &&
+    crypto.timingSafeEqual(Buffer.from(token), Buffer.from(configuredKey))
+  );
 }

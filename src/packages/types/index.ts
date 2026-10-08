@@ -232,5 +232,6 @@ export interface SafeSystemConfig {
   geminiLiveVerified: boolean;
   environmentEnforced: "sandbox" | "simulation";
   writesProtected: boolean;
+  protectionPolicy: "admin_key_enforced" | "simulation_only_demo" | "disabled_fail_closed" | "development_permissive";
   demoMode: boolean;
 }

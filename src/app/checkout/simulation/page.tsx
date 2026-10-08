@@ -50,6 +50,15 @@ function SimulationCheckoutContent() {
         );
 
         if (matched) {
+          // STRICT REJECTION: Simulation checkout is restricted to simulated goals only
+          if (!matched.isSimulated || matched.mode === "sandbox") {
+            setError(
+              "Simulation Checkout is strictly restricted to simulated goals. Real PayPal Sandbox orders must be approved through the official PayPal Sandbox checkout flow."
+            );
+            setGoal(null);
+            return;
+          }
+
           setGoal(matched);
           if (matched.status === "paid") {
             setCaptured(true);
@@ -103,7 +112,10 @@ function SimulationCheckoutContent() {
   }, [orderId]);
 
   const handleSimulateCapture = async () => {
-    if (!goal) return;
+    if (!goal || !goal.isSimulated) {
+      setError("Cannot execute simulation capture for real PayPal Sandbox orders.");
+      return;
+    }
     setCapturing(true);
     setError(null);
 
@@ -111,7 +123,10 @@ function SimulationCheckoutContent() {
       if (goal.id && goal.id !== "sim_virtual") {
         const res = await fetch(`/api/goals/${goal.id}/capture`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-simulation-checkout": "true",
+          },
         });
 
         if (!res.ok) {
@@ -132,7 +147,7 @@ function SimulationCheckoutContent() {
         await new Promise((r) => setTimeout(r, 600));
         setCaptured(true);
         setCaptureReceipt({
-          captureId: `SIM_CAP_${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+          captureId: `SIM_CAP_${Date.now().toString(36).toUpperCase()}`,
           amount: goal.amount,
           currency: goal.currency,
           timestamp: new Date().toISOString(),

@@ -52,7 +52,7 @@ export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
         return (
           <span className="inline-flex items-center space-x-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/15 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30">
             <CheckCircle2 className="w-3 h-3 text-purple-600 dark:text-purple-400" />
-            <span>Disbursement Authorized (Simulation)</span>
+            <span>Approved for Review (Simulation Only)</span>
           </span>
         );
       case "awaiting_payment":

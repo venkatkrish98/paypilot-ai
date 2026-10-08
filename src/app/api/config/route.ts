@@ -11,11 +11,20 @@ export async function GET() {
 
   const hasVerified = defaultAIPlanner.hasVerifiedGemini();
   const isAvailable = defaultAIPlanner.isAIAvailable();
-  const writesProtected = Boolean(
-    process.env.PAYPILOT_ADMIN_KEY ||
-      process.env.PAYPILOT_API_KEY ||
-      (process.env.NODE_ENV === "production" && process.env.DEMO_MODE === "false")
+  const hasAdminKey = Boolean(
+    (process.env.PAYPILOT_ADMIN_KEY || process.env.PAYPILOT_API_KEY || "").trim()
   );
+  const isProduction = process.env.NODE_ENV === "production";
+  const demoModeDisabled = process.env.DEMO_MODE === "false";
+
+  const writesProtected = hasAdminKey || isProduction;
+  const protectionPolicy = hasAdminKey
+    ? "admin_key_enforced"
+    : demoModeDisabled
+    ? "disabled_fail_closed"
+    : isProduction
+    ? "simulation_only_demo"
+    : "development_permissive";
 
   const config: SafeSystemConfig = {
     paypalConfigured: isConfigured,
@@ -31,7 +40,8 @@ export async function GET() {
     geminiLiveVerified: hasVerified,
     environmentEnforced: "sandbox",
     writesProtected,
-    demoMode: process.env.DEMO_MODE !== "false",
+    protectionPolicy,
+    demoMode: !demoModeDisabled,
   };
 
   return NextResponse.json(config);

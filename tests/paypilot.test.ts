@@ -13,7 +13,7 @@ import { defaultSafetyEngine } from "../src/packages/risk";
 import { defaultPayPalClient, PayPalClient } from "../src/packages/paypal";
 import { PaymentGoal, Customer } from "../src/packages/types";
 import { getNextDayOfWeek, parseRelativeDate } from "../src/packages/agent/ai-planner";
-import { checkWriteAuthorization, generateDemoSessionToken, isValidDemoSessionToken } from "../src/packages/security/auth";
+import { checkWriteAuthorization, isRequestAdmin } from "../src/packages/security/auth";
 
 // ------------------------------------------------------------------------------
 // Database Test Isolation: Force in-memory database store
@@ -580,7 +580,7 @@ describe("PayPilot AI Test Suite", () => {
       const authResult = checkWriteAuthorization(unauthReq);
       expect(authResult.authorized).toBe(false);
       expect(authResult.statusCode).toBe(401);
-      expect(authResult.reason).toContain("Missing authentication credentials");
+      expect(authResult.reason).toContain("Missing administrative credentials");
     } finally {
       process.env.NODE_ENV = originalEnv;
       if (originalKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = originalKey;
@@ -637,59 +637,46 @@ describe("PayPilot AI Test Suite", () => {
     }
   });
 
-  // 23. Browser-facing actions with safe ephemeral session token
-  it("23. should permit browser UI mutations in production via valid ephemeral session token without embedding secrets", () => {
-    const originalEnv = process.env.NODE_ENV;
+  // 23. GET /api/auth/session truthfulness & zero token emission
+  it("23. should inspect session status truthfully without granting mutation tokens to anonymous callers", async () => {
+    const { GET: getSession } = await import("../src/app/api/auth/session/route");
+
+    // Anonymous request: Must NOT return an authorization token to anyone or grant mutation authority over real Sandbox
+    const anonymousReq = new Request("http://localhost:3000/api/auth/session", { method: "GET" });
+    const anonRes = await getSession(anonymousReq);
+    expect(anonRes.status).toBe(200);
+    const anonJson = await anonRes.json();
+
+    expect(anonJson.token).toBeUndefined();
+    expect(anonJson.authToken).toBeUndefined();
+    expect(anonJson.sessionToken).toBeUndefined();
+    expect(anonJson.authenticated).toBe(false);
+    expect(anonJson.role).toBe("anonymous");
+    expect(anonJson.sandboxAccess).toBe(false);
+
+    // Admin request with configured key
+    const originalKey = process.env.PAYPILOT_ADMIN_KEY;
     try {
-      process.env.NODE_ENV = "production";
-
-      // Browser issues ephemeral session token via /api/auth/session
-      const sessionToken = generateDemoSessionToken();
-      expect(isValidDemoSessionToken(sessionToken)).toBe(true);
-
-      // Browser request presenting cookie
-      const browserReqCookie = new Request("http://localhost:3000/api/goals", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "sec-fetch-site": "same-origin",
-          Cookie: `paypilot_session=${sessionToken}`,
-        },
+      process.env.PAYPILOT_ADMIN_KEY = "test_admin_key_truthful_session";
+      const adminReq = new Request("http://localhost:3000/api/auth/session", {
+        method: "GET",
+        headers: { Authorization: "Bearer test_admin_key_truthful_session" },
       });
-      const cookieAuth = checkWriteAuthorization(browserReqCookie);
-      expect(cookieAuth.authorized).toBe(true);
-      expect(cookieAuth.isBrowserSession).toBe(true);
-
-      // Browser request presenting x-paypilot-session header
-      const browserReqHeader = new Request("http://localhost:3000/api/goals", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "sec-fetch-site": "same-origin",
-          "x-paypilot-session": sessionToken,
-        },
-      });
-      const headerAuth = checkWriteAuthorization(browserReqHeader);
-      expect(headerAuth.authorized).toBe(true);
-
-      // Bogus/unregistered session token fails closed
-      const bogusReq = new Request("http://localhost:3000/api/goals", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: "paypilot_session=forged_token_12345",
-        },
-      });
-      const bogusAuth = checkWriteAuthorization(bogusReq);
-      expect(bogusAuth.authorized).toBe(false);
-      expect(bogusAuth.statusCode).toBe(401);
+      const adminRes = await getSession(adminReq);
+      expect(adminRes.status).toBe(200);
+      const adminJson = await adminRes.json();
+      expect(adminJson.authenticated).toBe(true);
+      expect(adminJson.role).toBe("admin");
+      expect(adminJson.sandboxAccess).toBe(true);
+      expect(adminJson.token).toBeUndefined();
     } finally {
-      process.env.NODE_ENV = originalEnv;
+      if (originalKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = originalKey;
+      else delete process.env.PAYPILOT_ADMIN_KEY;
     }
   });
 
-  // 24. Safe Demo Reset preserves normal cust_<id> and legacy IDs
-  it("24. should preserve customers created with normal cust_<id> IDs and goals with legacy IDs on demo reset", () => {
+  // 24. Safe Demo Reset preserves all non-demo user data (goals, customers, memories, recommendations)
+  it("24. should preserve all non-demo user data including memories, recommendations, goals and customers on demo reset", () => {
     // 1. Customer with standard cust_<timestamp/uuid> prefix
     const normalCustomer: Customer = {
       id: "cust_1791888888_real_user",
@@ -741,29 +728,58 @@ describe("PayPilot AI Test Suite", () => {
     };
     db.saveGoal(legacyGoal);
 
+    // 4. Custom Memory with arbitrary ID
+    db.saveMemory({
+      id: "mem_custom_user_rule_999",
+      key: "enterprise_payment_terms",
+      value: "Enterprise Corp requires net-45 invoicing terms.",
+      category: "rule",
+    });
+
+    // 5. Custom Recommendation with arbitrary ID
+    db.saveRecommendation({
+      id: "rec_arbitrary_user_rec_42",
+      title: "Follow up with Marcus",
+      description: "Custom user follow-up recommendation.",
+      actionLabel: "Send Message",
+      actionType: "prepare_followup",
+      goalId: "goal_1791234567890",
+      urgency: "medium",
+      createdAt: new Date().toISOString(),
+    });
+
     // Run resetDemoFixtures
     db.resetDemoFixtures();
 
-    // Verify user customers and goals were preserved (NO prefix deletion heuristics!)
+    // Verify user customers, goals, memories, and recommendations were preserved!
     expect(db.getCustomerById("cust_1791888888_real_user")).toBeDefined();
     expect(db.getCustomerById("client_enterprise_corp")).toBeDefined();
     expect(db.getGoalById("goal_1791234567890")).toBeDefined();
+    expect(db.getMemoryById("mem_custom_user_rule_999")).toBeDefined();
+    expect(db.getRecommendationById("rec_arbitrary_user_rec_42")).toBeDefined();
 
     // Verify canonical fixtures exist and their balances are accurately restored
     expect(db.getCustomerById("cust_sarah")?.outstandingAmount).toBe(1200);
     expect(db.getCustomerById("cust_john")?.outstandingAmount).toBe(0);
     expect(db.getCustomerById("cust_mike")?.outstandingAmount).toBe(2500);
     expect(db.getCustomerById("cust_acme")?.outstandingAmount).toBe(600);
+    expect(db.getMemoryById("mem_1")).toBeDefined();
+    expect(db.getRecommendationById("rec_1")).toBeDefined();
   });
 
-  // 25. Payout reviews separation from incoming collections metrics
-  it("25. should separate approved payout reviews from collected-payment metrics and keep paidAmount truthful", async () => {
+  // 25. Payout reviews separation: Safety sign-off recorded without reducing vendor balance or adding to payment history
+  it("25. should separate approved payout reviews from payout execution, preserving vendor balance and history", async () => {
     // Check initial metrics: John paid $850 incoming collection, Mike is pending payout review
     const initialMetrics = db.getMetrics();
     expect(initialMetrics.paidCount).toBe(1);
     expect(initialMetrics.paidAmount).toBe(850);
     expect(initialMetrics.payoutApprovedCount).toBe(0);
     expect(initialMetrics.payoutApprovedAmount).toBe(0);
+
+    // Initial Mike Reynolds vendor balance: $2,500, no completed history
+    const initialMike = db.getCustomerById("cust_mike");
+    expect(initialMike?.outstandingAmount).toBe(2500);
+    expect(initialMike?.paymentHistory.length).toBe(0);
 
     // Approve Mike Reynolds' $2,500 vendor payout
     const { POST: approvePost } = await import("../src/app/api/goals/[id]/approve/route");
@@ -779,22 +795,27 @@ describe("PayPilot AI Test Suite", () => {
     expect(mikeGoalAfter?.status).toBe("payout_approved");
     expect(mikeGoalAfter?.approvalStatus).toBe("approved");
 
-    // Re-check metrics:
+    // CRITICAL LEDGER VERIFICATION:
+    // Payout approval records safety sign-off only; vendor balance must NOT be reduced
+    // and no completed payment-history entry must be added without real payout API execution.
+    const mikeCustAfter = db.getCustomerById("cust_mike");
+    expect(mikeCustAfter?.outstandingAmount).toBe(2500);
+    expect(mikeCustAfter?.paymentHistory.length).toBe(0);
+
+    // Metrics check: Total collected / paid incoming money must NOT be inflated by outgoing vendor approvals!
     const updatedMetrics = db.getMetrics();
-    // CRITICAL: Total collected / paid incoming money must NOT be inflated by outgoing vendor approvals!
     expect(updatedMetrics.paidCount).toBe(1);
     expect(updatedMetrics.paidAmount).toBe(850);
-
-    // Outgoing approved payout must be tracked in distinct payout metrics
     expect(updatedMetrics.payoutApprovedCount).toBe(1);
     expect(updatedMetrics.payoutApprovedAmount).toBe(2500);
 
-    // Simulation timeline check
+    // Simulation timeline check: Explicitly notes simulation only and no payout dispatched
     const timeline = mikeGoalAfter?.timeline || [];
     const approvalEvent = timeline.find((t) => t.title.toLowerCase().includes("approved"));
     expect(approvalEvent).toBeDefined();
     expect(approvalEvent?.isSimulated).toBe(true);
-    expect(approvalEvent?.description).toContain("Internal safety sign-off completed");
+    expect(approvalEvent?.title).toContain("No Payout Dispatched");
+    expect(approvalEvent?.description).toContain("Vendor balance remains unchanged");
   });
 
   // 26. Simulation checkout URL contracts
@@ -811,8 +832,8 @@ describe("PayPilot AI Test Suite", () => {
     expect(checkoutUrl).not.toContain("paypal.com");
   });
 
-  // 27. End-to-end API route handler write protection in production
-  it("27. should enforce fail-closed write protection at the API route handler level in production", async () => {
+  // 27. End-to-end API route write protection: Admin key required in production for non-simulated operations
+  it("27. should enforce write protection at API route handler level and permit admin key", async () => {
     const originalEnv = process.env.NODE_ENV;
     const originalKey = process.env.PAYPILOT_ADMIN_KEY;
     const { POST: createGoalPost } = await import("../src/app/api/goals/route");
@@ -828,18 +849,7 @@ describe("PayPilot AI Test Suite", () => {
         currency: "USD",
       });
 
-      // 1. Unauthenticated in production -> 401
-      const unauthReq = new Request("http://localhost:3000/api/goals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
-      });
-      const unauthRes = await createGoalPost(unauthReq);
-      expect(unauthRes.status).toBe(401);
-      const unauthJson = await unauthRes.json();
-      expect(unauthJson.error).toContain("Missing authentication credentials");
-
-      // 2. Configured admin key -> 201
+      // Configured admin key succeeds
       process.env.PAYPILOT_ADMIN_KEY = "prod_admin_secret_999";
       const authKeyReq = new Request("http://localhost:3000/api/goals", {
         method: "POST",
@@ -851,30 +861,123 @@ describe("PayPilot AI Test Suite", () => {
       });
       const authKeyRes = await createGoalPost(authKeyReq);
       expect(authKeyRes.status).toBe(201);
-
-      // 3. Browser session token -> 201
-      const sessionToken = generateDemoSessionToken();
-      const browserReq = new Request("http://localhost:3000/api/goals", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "sec-fetch-site": "same-origin",
-          Cookie: `paypilot_session=${sessionToken}`,
-        },
-        body: JSON.stringify({
-          goal: "Collect $450 from client",
-          customer: "Client Corp",
-          amount: 450,
-          currency: "USD",
-        }),
-      });
-      const browserRes = await createGoalPost(browserReq);
-      expect(browserRes.status).toBe(201);
     } finally {
       process.env.NODE_ENV = originalEnv;
       if (originalKey !== undefined) process.env.PAYPILOT_ADMIN_KEY = originalKey;
       else delete process.env.PAYPILOT_ADMIN_KEY;
     }
+  });
+
+  // 28. /checkout/simulation route rejects real Sandbox goals
+  it("28. should reject real Sandbox goals from /checkout/simulation route and never capture them via simulation", async () => {
+    const realGoal: PaymentGoal = {
+      id: "goal_real_sandbox_test",
+      goal: "Real PayPal Sandbox collection",
+      goalType: "collection",
+      customer: "Real Buyer",
+      amount: 100,
+      currency: "USD",
+      status: "awaiting_payment",
+      mode: "sandbox",
+      isSimulated: false,
+      paypalOrderId: "REAL_SANDBOX_ORD_12345",
+      riskLevel: "low",
+      riskScore: 5,
+      riskChecks: [],
+      requiresApproval: false,
+      createdBy: "user",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeline: [],
+    };
+    db.saveGoal(realGoal);
+
+    const { POST: capturePost } = await import("../src/app/api/goals/[id]/capture/route");
+
+    // Simulation checkout route attempting capture on real Sandbox order
+    const simCheckoutReq = new Request("http://localhost:3000/api/goals/goal_real_sandbox_test/capture", {
+      method: "POST",
+      headers: {
+        "x-simulation-checkout": "true",
+      },
+    });
+
+    const res = await capturePost(simCheckoutReq, { params: { id: "goal_real_sandbox_test" } });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toContain("Real PayPal Sandbox orders cannot be captured from the simulation checkout route");
+
+    // Real goal must NOT be marked paid
+    const goalAfter = db.getGoalById("goal_real_sandbox_test");
+    expect(goalAfter?.status).toBe("awaiting_payment");
+  });
+
+  // 29. Anonymous requests cannot approve or capture real Sandbox goals
+  it("29. should deny anonymous requests from capturing or approving real Sandbox goals", async () => {
+    const realGoal: PaymentGoal = {
+      id: "goal_sandbox_security_test",
+      goal: "Sandbox transaction requiring admin",
+      goalType: "collection",
+      customer: "VIP Client",
+      amount: 500,
+      currency: "USD",
+      status: "awaiting_payment",
+      mode: "sandbox",
+      isSimulated: false,
+      paypalOrderId: "REAL_SANDBOX_ORD_99999",
+      riskLevel: "low",
+      riskScore: 5,
+      riskChecks: [],
+      requiresApproval: false,
+      createdBy: "user",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeline: [],
+    };
+    db.saveGoal(realGoal);
+
+    const { POST: capturePost } = await import("../src/app/api/goals/[id]/capture/route");
+    const anonCaptureReq = new Request("http://localhost:3000/api/goals/goal_sandbox_security_test/capture", {
+      method: "POST",
+    });
+
+    const captureRes = await capturePost(anonCaptureReq, { params: { id: "goal_sandbox_security_test" } });
+    expect(captureRes.status).toBe(401);
+    const captureJson = await captureRes.json();
+    expect(captureJson.error).toContain("Real PayPal Sandbox operations require administrative authorization");
+
+    // Pending approval real sandbox goal
+    const realPendingGoal: PaymentGoal = {
+      id: "goal_sandbox_pending_test",
+      goal: "Sandbox transaction pending approval",
+      goalType: "collection",
+      customer: "VIP Client",
+      amount: 2500,
+      currency: "USD",
+      status: "pending_approval",
+      mode: "sandbox",
+      isSimulated: false,
+      riskLevel: "high",
+      riskScore: 70,
+      riskChecks: [],
+      requiresApproval: true,
+      approvalStatus: "pending",
+      createdBy: "user",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeline: [],
+    };
+    db.saveGoal(realPendingGoal);
+
+    const { POST: approvePost } = await import("../src/app/api/goals/[id]/approve/route");
+    const anonApproveReq = new Request("http://localhost:3000/api/goals/goal_sandbox_pending_test/approve", {
+      method: "POST",
+    });
+
+    const approveRes = await approvePost(anonApproveReq, { params: { id: "goal_sandbox_pending_test" } });
+    expect(approveRes.status).toBe(401);
+    const approveJson = await approveRes.json();
+    expect(approveJson.error).toContain("Real PayPal Sandbox operations require administrative authorization");
   });
 });
 

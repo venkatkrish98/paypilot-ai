@@ -7,7 +7,7 @@
 [![Next.js 14](https://img.shields.io/badge/Next.js-14.2%20App%20Router-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38BDF8?logo=tailwind-css)](https://tailwindcss.com)
-[![Tests Passing](https://img.shields.io/badge/Tests-19%2F19%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
+[![Tests Passing](https://img.shields.io/badge/Tests-29%2F29%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
 [![ESLint Passing](https://img.shields.io/badge/ESLint-Clean-brightgreen?logo=eslint)](https://eslint.org)
 
 ---
@@ -205,7 +205,7 @@ Run the automated test suite:
 npm test
 ```
 
-### Covered Test Cases (19/19 Passing):
+### Covered Test Cases (29/29 Passing):
 1. `Create payment goal` — Parameter verification and storage.
 2. `Customer lookup` — Profile resolution and payment history retrieval.
 3. `Truthful Simulation labeling` — Orders marked `SIMULATED_ORD_...` with in-app simulation checkout preview.
@@ -225,15 +225,29 @@ npm test
 17. `Approval bypass prevention` — Prevents skipping human review via direct status mutations.
 18. `Pending approval capture rejection` — Rejects capture attempts on goals awaiting approval.
 19. `Idempotent approvals` — Rejects duplicate approvals and protects against double-processing.
+20. `Fail-closed write protection when demo disabled` — Denies mutations when `DEMO_MODE=false`.
+21. `Fail-closed write protection in production` — Missing administrative credentials denied by default.
+22. `Production admin key validation` — Allows authenticated mutations with valid admin API key.
+23. `Session inspection truthfulness` — `GET /api/auth/session` inspects auth status without minting mutation tokens.
+24. `Safe Demo Reset data preservation` — Preserves arbitrary non-demo memories, recommendations, goals, and customers.
+25. `Payout review approval separation` — Safety sign-off recorded without reducing vendor balance or adding fake history.
+26. `Simulation checkout contracts` — In-app `/checkout/simulation` links generated; no fabricated tokens sent to PayPal.
+27. `API route handler protection` — Admin authorization verified at the route handler level in production.
+28. `Simulation route sandbox isolation` — Rejects real Sandbox goals from `/checkout/simulation` route.
+29. `Sandbox mutation access denied to anonymous` — Anonymous callers strictly forbidden from approving or capturing real Sandbox orders.
 
 ---
 
 ## Current Architecture, Persistence Limits & Submission Evidence
 
-- **Local File Persistence Limits:** Data is stored in `data/paypilot_db.json`. This provides durable persistence across restarts for single-instance hackathon deployments. Multi-instance horizontal scaling would require external database storage (e.g. Cloud SQL / Firestore). Persistence errors are surfaced to callers rather than returning silent success.
-- **In-App Simulation Checkout:** Simulation mode orders generate in-app checkout previews (`/checkout/simulation?orderId=...`) rather than sending users to live paypal.com with fabricated tokens.
-- **Vendor Disbursements vs. Buyer Collections:** PayPal Orders v2 processes incoming customer collections. Outbound payments to vendors (like Mike Reynolds) represent disbursement review simulations held for administrative sign-off; they are not sent to Orders v2.
-- **Required Submission Evidence:**
-  - Public GitHub repository with open-source MIT license (`https://github.com/venkatkrish98/paypilot-ai`).
-  - 2.5-minute demo video script provided in `HACKATHON_SUBMISSION.md`.
-  - PayPal Sandbox Developer credentials for live end-to-end buyer checkout verification.
+- **Runtime Mode:** Operates out of the box in verified **Simulation Mode** (deterministic local engine, zero external network dependency). Switches automatically to **Live PayPal Sandbox** and **Live Google Gemini** once developer credentials are provided in `.env`.
+- **Sandbox Security & Route Isolation:** Real PayPal Sandbox goals can only be approved and captured through official PayPal buyer approval with administrative authorization. The in-app `/checkout/simulation` preview route rejects real Sandbox orders.
+- **Truthful Payout Review Ledger:** Payout review approval records internal safety sign-off only; vendor balances remain unchanged and no completed payment records are added without real PayPal Payouts execution.
+- **Local File Persistence:** Data is stored in `data/paypilot_db.json`. Demo reset restores canonical fixtures while preserving all non-demo user goals, customers, memories, and recommendations of arbitrary IDs.
+- **Required Submission Evidence (Owner Checklist):**
+  - [x] Public GitHub repository with open-source MIT license (`https://github.com/venkatkrish98/paypilot-ai`).
+  - [x] Complete automated test suite (29/29 passing) and clean production build.
+  - [ ] Live PayPal Sandbox Client ID & Secret configured for live judge testing.
+  - [ ] Live Google Gemini API Key configured for live LLM planning.
+  - [ ] Publicly hosted deployment URL (e.g. Vercel / Cloud Run).
+  - [ ] 2.5-minute demo video walkthrough (script in `HACKATHON_SUBMISSION.md`).

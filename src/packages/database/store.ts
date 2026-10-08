@@ -575,10 +575,23 @@ export class DatabaseStore {
       "cust_acme",
     ]);
 
+    const CANONICAL_MEMORY_IDS = new Set([
+      "mem_1",
+      "mem_2",
+      "mem_3",
+    ]);
+
+    const CANONICAL_REC_IDS = new Set([
+      "rec_1",
+      "rec_2",
+    ]);
+
     // 1. Identify non-demo user records to preserve.
     // Pure metadata & canonical ID matching — ZERO heuristic ID prefix checks!
     const nonDemoUserGoals: PaymentGoal[] = [];
     const nonDemoUserCustomers: Customer[] = [];
+    const nonDemoUserMemories: MemoryItem[] = [];
+    const nonDemoUserRecommendations: AIRecommendation[] = [];
 
     for (const goal of Array.from(this.goals.values())) {
       // If it is NOT one of the 4 canonical fixtures and NOT explicitly marked isDemoFixture === true, preserve it!
@@ -596,12 +609,26 @@ export class DatabaseStore {
       }
     }
 
+    for (const mem of Array.from(this.memories.values())) {
+      if (!CANONICAL_MEMORY_IDS.has(mem.id)) {
+        nonDemoUserMemories.push(mem);
+      }
+    }
+
+    for (const rec of Array.from(this.recommendations.values())) {
+      if (!CANONICAL_REC_IDS.has(rec.id)) {
+        nonDemoUserRecommendations.push(rec);
+      }
+    }
+
     // 2. Re-seed demo fixtures (restores Sarah $1,200, John $850, Mike $2,500, Acme $600)
     this.seedDemoData();
 
-    // 3. Re-attach preserved user goals and customers
+    // 3. Re-attach preserved user goals, customers, memories, and recommendations
     nonDemoUserGoals.forEach((g) => this.goals.set(g.id, g));
     nonDemoUserCustomers.forEach((c) => this.customers.set(c.id, c));
+    nonDemoUserMemories.forEach((m) => this.memories.set(m.id, m));
+    nonDemoUserRecommendations.forEach((r) => this.recommendations.set(r.id, r));
 
     this.persistToDisk();
   }
@@ -732,6 +759,16 @@ export class DatabaseStore {
     return Array.from(this.memories.values());
   }
 
+  public getMemoryById(id: string): MemoryItem | undefined {
+    return this.memories.get(id);
+  }
+
+  public saveMemory(memory: MemoryItem): MemoryItem {
+    this.memories.set(memory.id, memory);
+    this.persistToDisk();
+    return memory;
+  }
+
   public addMemory(key: string, value: string, category: MemoryItem["category"] = "preference"): MemoryItem {
     const id = `mem_${Date.now()}`;
     const mem: MemoryItem = {
@@ -749,6 +786,16 @@ export class DatabaseStore {
   // Recommendations
   public getRecommendations(): AIRecommendation[] {
     return Array.from(this.recommendations.values());
+  }
+
+  public getRecommendationById(id: string): AIRecommendation | undefined {
+    return this.recommendations.get(id);
+  }
+
+  public saveRecommendation(rec: AIRecommendation): AIRecommendation {
+    this.recommendations.set(rec.id, rec);
+    this.persistToDisk();
+    return rec;
   }
 
   public dismissRecommendation(id: string): void {

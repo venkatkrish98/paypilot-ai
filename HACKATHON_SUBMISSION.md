@@ -135,10 +135,13 @@ User Intent ("Collect $1,200 from Sarah by Friday")
 
 ## 7. Submission Checklist & Evidence Needed
 
-- [x] **Working PayPal Sandbox Integration:** Direct integration with `/v1/oauth2/token`, `/v2/checkout/orders`, and capture.
-- [x] **Truthful Simulation Path:** Clearly distinguished simulation mode with in-app simulation checkout preview.
-- [x] **Real AI Integration:** Google Gemini 2.5 Flash via `@google/genai` with deterministic fallback.
-- [x] **19/19 Automated Tests Passing:** Verified with Vitest (100% green).
-- [x] **Clean Next.js Build & ESLint:** Zero errors or warnings (`npm run build` and `npm run lint`).
-- [x] **Open-Source Repository:** Public GitHub repository (`https://github.com/venkatkrish98/paypilot-ai`) with MIT license.
-- [ ] **Demo Video Recording:** Record 2:30 video following the exact script in Section 6.
+- [x] **PayPal Orders v2 Integration & Architecture:** Direct REST integration with `/v1/oauth2/token`, `/v2/checkout/orders`, and capture with amount/currency/status validation.
+- [ ] **Live PayPal Sandbox Credentials Verification:** Integration code verified; requires judge/owner-supplied Sandbox client credentials in `.env` for external PayPal checkout execution.
+- [x] **Truthful Simulation Path:** Clearly distinguished simulation mode with in-app simulation checkout preview and strict route isolation.
+- [x] **Multi-Agent Orchestration & Planning:** 7-agent capability pipeline with structured intent extraction and 5-point Payment Safety heuristic engine.
+- [ ] **Live Google Gemini 2.5 Flash API Key Verification:** Full SDK integration with `@google/genai`; verified deterministic fallback engine active until live API key is configured.
+- [x] **29/29 Automated Regression Tests Passing:** Verified with Vitest (100% green coverage across security, idempotency, ledger, and sandbox isolation).
+- [x] **Clean Next.js 14 Build & ESLint:** Zero build errors or linter warnings (`npm run build` and `npm run lint`).
+- [x] **Open-Source Repository:** Public GitHub repository (`https://github.com/venkatkrish98/paypilot-ai`) with open MIT license.
+- [ ] **Hosted Live Production Deployment:** Code production-ready; live public URL (Vercel / Cloud Run) to be configured by project owner.
+- [ ] **Demo Video Recording:** 2:30 video walkthrough following the exact script in Section 6 to be recorded by project owner.

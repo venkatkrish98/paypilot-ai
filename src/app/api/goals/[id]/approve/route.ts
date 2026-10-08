@@ -9,14 +9,17 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const auth = checkWriteAuthorization(req);
-    if (!auth.authorized) {
-      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
-    }
-
     const goal = db.getGoalById(params.id);
     if (!goal) {
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
+    }
+
+    const auth = checkWriteAuthorization(req, {
+      isSimulated: goal.isSimulated,
+      action: "approve",
+    });
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
     }
 
     // Idempotency: Reject invalid transitions
@@ -44,15 +47,17 @@ export async function POST(
     const isLiveSandbox = defaultPayPalClient.isConfigured() && !goal.isSimulated;
 
     // Distinct Flow 1: Payout / Vendor Disbursement Review
+    // Safety sign-off recorded only; must NOT reduce vendor balance or add completed payment history
+    // until an actual payout execution API confirms completion.
     if (goal.goalType === "payout_review") {
       const approveEvent: TimelineEvent = {
         id: `t_appr_${Date.now()}`,
         timestamp: timeNow,
         stage: "goal_completed",
-        title: "Vendor Disbursement Approved (Simulation Review)",
-        description: `Administrator authorized vendor disbursement of $${goal.amount.toLocaleString()} for ${
+        title: "Vendor Disbursement Approved for Review (Simulation Only — No Payout Dispatched)",
+        description: `Administrator authorized internal safety sign-off of $${goal.amount.toLocaleString()} for ${
           goal.customer
-        }. Internal safety sign-off completed (Simulation Review; PayPal Payouts API required for live external dispatch).`,
+        }. Approval recorded for review only (Simulation Only; external PayPal Payouts API required to execute fund transfer). Vendor balance remains unchanged until payout execution.`,
         isSimulated: true,
       };
 
@@ -64,32 +69,11 @@ export async function POST(
 
       db.saveGoal(goal);
 
-      // Reconcile vendor balance
-      if (goal.customerId) {
-        const customer = db.getCustomerById(goal.customerId);
-        if (customer) {
-          customer.outstandingAmount = Math.max(0, customer.outstandingAmount - goal.amount);
-          customer.lastPaymentDate = new Date().toISOString().split("T")[0];
-          customer.lastPaymentAmount = goal.amount;
-          customer.paymentHistory.push({
-            id: `hist_payout_${Date.now()}`,
-            date: customer.lastPaymentDate,
-            amount: goal.amount,
-            currency: goal.currency,
-            paypalOrderId: `SIMULATED_PAYOUT_REV_${Date.now().toString(36).toUpperCase()}`,
-            status: "completed",
-            purpose: goal.purpose || goal.goal,
-            isSimulated: true,
-          });
-          db.saveCustomer(customer);
-        }
-      }
-
       return NextResponse.json({
         success: true,
         goal,
         metrics: db.getMetrics(),
-        message: `Vendor disbursement of $${goal.amount.toLocaleString()} for ${goal.customer} approved and recorded (Simulation Review).`,
+        message: `Vendor disbursement of $${goal.amount.toLocaleString()} for ${goal.customer} approved for review (Simulation Only — No Payout Dispatched). Vendor balance remains unchanged until execution.`,
         isSimulated: true,
       });
     }

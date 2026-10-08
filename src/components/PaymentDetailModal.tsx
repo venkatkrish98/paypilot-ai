@@ -216,13 +216,13 @@ export const PaymentDetailModal: React.FC<DetailModalProps> = ({
               <div>
                 <span className="text-slate-500 block text-[10px]">Orders v2 ID</span>
                 <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold truncate block">
-                  {goal.paypalOrderId || "Held in approval queue"}
+                  {goal.paypalOrderId || (goal.goalType === "payout_review" ? "N/A (Disbursement Review)" : "Held in approval queue")}
                 </span>
               </div>
               <div>
-                <span className="text-slate-500 block text-[10px]">Capture Reference</span>
+                <span className="text-slate-500 block text-[10px]">Capture Reference / Payout Status</span>
                 <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold truncate block">
-                  {goal.paypalCaptureId || (goal.status === "paid" ? "Confirmed" : "Pending capture")}
+                  {goal.paypalCaptureId || (goal.status === "payout_approved" ? "Approved for Review (Simulation Only — No Payout Dispatched)" : goal.status === "paid" ? "Confirmed" : "Pending capture / execution")}
                 </span>
               </div>
             </div>

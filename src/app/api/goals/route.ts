@@ -21,7 +21,13 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const auth = checkWriteAuthorization(req);
+    const isLive = defaultPayPalClient.isConfigured();
+    const isSimulated = !isLive;
+
+    const auth = checkWriteAuthorization(req, {
+      isSimulated,
+      action: "create",
+    });
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
     }
@@ -83,8 +89,6 @@ export async function POST(req: Request) {
       isPayout: goalType === "payout_review",
     });
 
-    const isLive = defaultPayPalClient.isConfigured();
-    const isSimulated = !isLive;
     const mode = isLive ? "sandbox" : "simulation";
     const timeNow = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
