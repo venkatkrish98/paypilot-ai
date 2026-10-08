@@ -30,5 +30,10 @@ yarn-error.log*
 # Local runtime DB & storage
 data/
 
+# Video generation artifacts & binaries
+video_assets/
+*.mp4
+*.pcm
+
 # Antigravity artifacts
 .system_generated/
