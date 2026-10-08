@@ -97,6 +97,13 @@ export async function POST(
 
       db.saveGoal(goal);
 
+      // Auto-dismiss any pending approval recommendations for this goal
+      for (const rec of Array.from(db.getRecommendations())) {
+        if (rec.goalId === goal.id && rec.actionType === "review_approval") {
+          db.dismissRecommendation(rec.id);
+        }
+      }
+
       const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
       const response = NextResponse.json({
         success: true,
@@ -144,6 +151,13 @@ export async function POST(
     goal.timeline.push(approveEvent);
 
     db.saveGoal(goal);
+
+    // Auto-dismiss any pending approval recommendations for this goal
+    for (const rec of Array.from(db.getRecommendations())) {
+      if (rec.goalId === goal.id && rec.actionType === "review_approval") {
+        db.dismissRecommendation(rec.id);
+      }
+    }
 
     const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
     const response = NextResponse.json({

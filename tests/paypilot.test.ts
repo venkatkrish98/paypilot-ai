@@ -2321,6 +2321,60 @@ describe("PayPilot AI Test Suite", () => {
       db.deleteGoal("goal_test_payout_approval_45");
     }
   });
+
+  // 46. Proactive AI recommendations dynamically resolved/hidden when underlying goal state is satisfied
+  it("46. should dynamically hide approval and follow-up recommendations when their associated goals are approved or paid", async () => {
+    const { GET: getRecs } = await import("../src/app/api/recommendations/route");
+
+    // 1. While goal_mike_2500 is pending_approval, rec_2 IS present
+    const req = new Request("http://localhost:3000/api/recommendations");
+    const res = await getRecs(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    const recIds = data.recommendations.map((r: any) => r.id);
+    expect(recIds).toContain("rec_2");
+
+    // 2. Transition goal_mike_2500 to payout_approved -> rec_2 MUST dynamically disappear!
+    const mikeGoal = db.getGoalById("goal_mike_2500")!;
+    const origStatus = mikeGoal.status;
+    const origApproval = mikeGoal.approvalStatus;
+
+    try {
+      mikeGoal.status = "payout_approved";
+      mikeGoal.approvalStatus = "approved";
+      db.saveGoal(mikeGoal);
+
+      const resAfter = await getRecs(new Request("http://localhost:3000/api/recommendations"));
+      const dataAfter = await resAfter.json();
+      const recIdsAfter = dataAfter.recommendations.map((r: any) => r.id);
+      expect(recIdsAfter).not.toContain("rec_2");
+
+      // Follow-up recommendation resolution test on Sarah:
+      const sarahGoal = db.getGoalById("goal_sarah_1200")!;
+      const origSarahStatus = sarahGoal.status;
+      try {
+        // While Sarah is awaiting_payment, rec_1 IS present
+        const resSarah = await getRecs(new Request("http://localhost:3000/api/recommendations"));
+        const dataSarah = await resSarah.json();
+        expect(dataSarah.recommendations.map((r: any) => r.id)).toContain("rec_1");
+
+        // When Sarah is captured/paid, rec_1 MUST dynamically disappear!
+        sarahGoal.status = "paid";
+        db.saveGoal(sarahGoal);
+
+        const resSarahPaid = await getRecs(new Request("http://localhost:3000/api/recommendations"));
+        const dataSarahPaid = await resSarahPaid.json();
+        expect(dataSarahPaid.recommendations.map((r: any) => r.id)).not.toContain("rec_1");
+      } finally {
+        sarahGoal.status = origSarahStatus;
+        db.saveGoal(sarahGoal);
+      }
+    } finally {
+      mikeGoal.status = origStatus;
+      mikeGoal.approvalStatus = origApproval;
+      db.saveGoal(mikeGoal);
+    }
+  });
 });
 
 

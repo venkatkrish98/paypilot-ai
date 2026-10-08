@@ -2,20 +2,45 @@
 
 import React from "react";
 import { Sparkles, ArrowRight } from "lucide-react";
-import { AIRecommendation } from "@/packages/types";
+import { AIRecommendation, PaymentGoal } from "@/packages/types";
 
 interface RecommendationsProps {
   recommendations: AIRecommendation[];
+  goals?: PaymentGoal[];
   onActionClick: (rec: AIRecommendation) => void;
   onDismiss?: (id: string) => void;
 }
 
 export const AIRecommendationsCard: React.FC<RecommendationsProps> = ({
   recommendations,
+  goals,
   onActionClick,
   onDismiss,
 }) => {
-  if (recommendations.length === 0) return null;
+  const activeRecommendations = recommendations.filter((rec) => {
+    if (rec.goalId && goals) {
+      const g = goals.find((goal) => goal.id === rec.goalId);
+      if (g) {
+        if (rec.actionType === "review_approval") {
+          const isPending =
+            (g.status === "pending_approval" || (g.requiresApproval && g.approvalStatus === "pending")) &&
+            g.status !== "payout_approved" &&
+            g.status !== "paid" &&
+            g.status !== "cancelled" &&
+            g.approvalStatus !== "approved";
+          if (!isPending) return false;
+        }
+        if (rec.actionType === "prepare_followup") {
+          if (g.status === "paid" || g.status === "payout_approved" || g.status === "cancelled") {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  });
+
+  if (activeRecommendations.length === 0) return null;
 
   return (
     <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2.5">
@@ -27,7 +52,7 @@ export const AIRecommendationsCard: React.FC<RecommendationsProps> = ({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-        {recommendations.map((rec) => (
+        {activeRecommendations.map((rec) => (
           <div
             key={rec.id}
             className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-2.5 hover:border-slate-300 dark:hover:border-slate-700 transition"

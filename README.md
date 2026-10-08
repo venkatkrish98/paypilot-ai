@@ -205,7 +205,7 @@ Run the automated test suite:
 npm test
 ```
 
-### Covered Test Cases (45/45 Passing):
+### Covered Test Cases (46/46 Passing):
 1. `Create payment goal` — Parameter verification and storage.
 2. `Customer lookup` — Profile resolution and payment history retrieval.
 3. `Truthful Simulation labeling` — Orders marked `SIMULATED_ORD_...` with in-app simulation checkout preview.
@@ -251,6 +251,7 @@ npm test
 43. `Production unowned record block & RFC IP validation` — Rejects orphaned/unowned records in production and strictly validates IPv4/IPv6 format with Node `net.isIP`.
 44. `Lockout persistence & disk purge` — Purges cleared lockout from both memory and disk on successful authentication to prevent resurrection on sync.
 45. `Approval queue & attention metrics resolution` — Cleanly removes approved payout reviews from pending approvals queue and reduces attention count immediately.
+46. `AI recommendation dynamic lifecycle resolution` — Dynamically resolves and hides approval and follow-up recommendations when the underlying goals are approved or paid.
 
 ---
 
@@ -263,7 +264,7 @@ npm test
 - **Truthful Payout Review Ledger:** Payout review approval records internal safety sign-off only; vendor balances remain unchanged and no completed payment records are added without real PayPal Payouts execution.
 - **Required Submission Evidence (Owner Checklist):**
   - [x] Public GitHub repository with open-source MIT license (`https://github.com/venkatkrish98/paypilot-ai`).
-  - [x] Complete automated test suite (45/45 passing) and clean production build.
+  - [x] Complete automated test suite (46/46 passing) and clean production build.
   - [x] Dual-engine AI architecture: Google Gemini 3.8 Flash with automated deterministic fallback.
   - [x] In-UI evaluator auth workflow for testing live PayPal Sandbox execution.
   - [ ] Public YouTube demo video (must be publicly visible on YouTube, under 3 minutes per [Devpost rules](https://paypalaihackathon.devpost.com/rules)).

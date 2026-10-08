@@ -891,7 +891,29 @@ export class DatabaseStore {
 
   // Recommendations
   public getRecommendations(): AIRecommendation[] {
-    return Array.from(this.recommendations.values());
+    return Array.from(this.recommendations.values()).filter((rec) => {
+      if (rec.goalId) {
+        const goal = this.goals.get(rec.goalId);
+        if (!goal) return false;
+        // If this is an approval recommendation, hide if goal is no longer pending approval
+        if (rec.actionType === "review_approval") {
+          const isPending =
+            (goal.status === "pending_approval" || (goal.requiresApproval && goal.approvalStatus === "pending")) &&
+            goal.status !== "payout_approved" &&
+            goal.status !== "paid" &&
+            goal.status !== "cancelled" &&
+            goal.approvalStatus !== "approved";
+          if (!isPending) return false;
+        }
+        // If this is a follow-up recommendation, hide if goal is already paid, approved, or cancelled
+        if (rec.actionType === "prepare_followup") {
+          if (goal.status === "paid" || goal.status === "payout_approved" || goal.status === "cancelled") {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
   }
 
   public getRecommendationById(id: string): AIRecommendation | undefined {

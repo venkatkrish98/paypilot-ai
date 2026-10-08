@@ -411,6 +411,7 @@ export default function Home() {
             {/* 3. Proactive Agent Recommendations */}
             <AIRecommendationsCard
               recommendations={recommendations}
+              goals={goals}
               onActionClick={handleRecommendationAction}
               onDismiss={handleDismissRecommendation}
             />
