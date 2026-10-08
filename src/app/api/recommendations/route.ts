@@ -13,10 +13,17 @@ export async function GET() {
   }
 }
 
+import { checkWriteAuthorization } from "@/packages/security/auth";
+
 export async function POST(req: Request) {
   try {
+    const auth = checkWriteAuthorization(req);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
+    }
+
     const { id, action } = await req.json();
-    if (action === "dismiss") {
+    if (action === "dismiss" && id) {
       db.dismissRecommendation(id);
     }
     return NextResponse.json({

@@ -22,13 +22,14 @@ export class PayPalClient {
   constructor(config?: Partial<PayPalConfig>) {
     this.clientId = (config?.clientId || process.env.PAYPAL_CLIENT_ID || "").trim();
     this.clientSecret = (config?.clientSecret || process.env.PAYPAL_CLIENT_SECRET || "").trim();
-    this.environment = (config?.environment || process.env.PAYPAL_ENVIRONMENT || "sandbox") as
-      | "sandbox"
-      | "production";
-    this.baseUrl =
-      this.environment === "production"
-        ? "https://api-m.paypal.com"
-        : "https://api-m.sandbox.paypal.com";
+    const rawEnv = (config?.environment || process.env.PAYPAL_ENVIRONMENT || "sandbox").trim().toLowerCase();
+    if (rawEnv === "production") {
+      throw new Error(
+        "CRITICAL SAFETY ENFORCEMENT: Live production PayPal environment is blocked for this hackathon evaluation build. Set PAYPAL_ENVIRONMENT=sandbox."
+      );
+    }
+    this.environment = "sandbox";
+    this.baseUrl = "https://api-m.sandbox.paypal.com";
   }
 
   /**
@@ -125,17 +126,17 @@ export class PayPalClient {
         create_time: new Date().toISOString(),
         links: [
           {
-            href: `${this.baseUrl}/v2/checkout/orders/${mockOrderId}`,
+            href: `/checkout/simulation?orderId=${mockOrderId}`,
             rel: "self",
             method: "GET",
           },
           {
-            href: `https://www.sandbox.paypal.com/checkoutnow?token=${mockOrderId}&mode=simulation_preview`,
+            href: `/checkout/simulation?orderId=${mockOrderId}`,
             rel: "approve",
             method: "GET",
           },
           {
-            href: `${this.baseUrl}/v2/checkout/orders/${mockOrderId}/capture`,
+            href: `/checkout/simulation?orderId=${mockOrderId}&action=capture`,
             rel: "capture",
             method: "POST",
           },
@@ -350,14 +351,14 @@ export class PayPalClient {
    * Generate checkout URL for payment
    */
   public getCheckoutUrl(order: PayPalOrderResponse): string {
+    if (order.isSimulated) {
+      return `/checkout/simulation?orderId=${order.id}`;
+    }
     const approveLink = order.links.find((l) => l.rel === "approve");
     if (approveLink) {
       return approveLink.href;
     }
-    const token = order.id;
-    return `https://www.sandbox.paypal.com/checkoutnow?token=${token}${
-      order.isSimulated ? "&mode=simulation_preview" : ""
-    }`;
+    return `https://www.sandbox.paypal.com/checkoutnow?token=${order.id}`;
   }
 }
 

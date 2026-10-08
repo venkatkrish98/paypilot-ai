@@ -19,6 +19,7 @@ interface DetailModalProps {
   onClose: () => void;
   onSimulatePayment: (goalId: string) => void;
   onApprovePayment: (goalId: string) => void;
+  onOpenSimulationCheckout?: (goal: PaymentGoal) => void;
 }
 
 export const PaymentDetailModal: React.FC<DetailModalProps> = ({
@@ -26,25 +27,54 @@ export const PaymentDetailModal: React.FC<DetailModalProps> = ({
   onClose,
   onSimulatePayment,
   onApprovePayment,
+  onOpenSimulationCheckout,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
 
-  // Accessible Escape Key and Focus Trap
+  // WAI-ARIA Focus Trap, Focus Restoration, and Escape Handling
   useEffect(() => {
     if (!goal) return;
 
+    previousActiveElement.current = document.activeElement as HTMLElement;
+    closeButtonRef.current?.focus();
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
         onClose();
+        return;
+      }
+
+      if (e.key === "Tab" && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+
+        const firstElement = focusable[0];
+        const lastElement = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
-    closeButtonRef.current?.focus();
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
+      previousActiveElement.current?.focus();
     };
   }, [goal, onClose]);
 
@@ -152,15 +182,33 @@ export const PaymentDetailModal: React.FC<DetailModalProps> = ({
               </span>
 
               {goal.paypalOrderId && (
-                <a
-                  href={goal.paypalPaymentLink || `https://www.sandbox.paypal.com/checkoutnow?token=${goal.paypalOrderId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center space-x-1 text-xs text-paypal-blue dark:text-sky-400 hover:underline font-semibold"
-                >
-                  <span>{goal.isSimulated ? "Preview Simulated Link" : "Open PayPal Sandbox"}</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                goal.isSimulated ? (
+                  <button
+                    onClick={() => {
+                      if (onOpenSimulationCheckout) {
+                        onOpenSimulationCheckout(goal);
+                      } else {
+                        onSimulatePayment(goal.id);
+                      }
+                    }}
+                    className="inline-flex items-center space-x-1 text-xs text-purple-600 dark:text-purple-400 hover:underline font-semibold"
+                    aria-label="Open In-App Simulation Checkout Preview"
+                  >
+                    <span>Simulation Checkout Preview</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <a
+                    href={goal.paypalPaymentLink || `https://www.sandbox.paypal.com/checkoutnow?token=${goal.paypalOrderId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center space-x-1 text-xs text-paypal-blue dark:text-sky-400 hover:underline font-semibold"
+                    aria-label="Open PayPal Sandbox Checkout in new tab"
+                  >
+                    <span>Open PayPal Sandbox</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )
               )}
             </div>
 

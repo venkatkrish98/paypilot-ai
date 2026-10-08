@@ -2,12 +2,18 @@ import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 import { defaultPayPalClient } from "@/packages/paypal";
 import { TimelineEvent } from "@/packages/types";
+import { checkWriteAuthorization } from "@/packages/security/auth";
 
 export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = checkWriteAuthorization(req);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
+    }
+
     const goal = db.getGoalById(params.id);
     if (!goal) {
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
@@ -123,34 +129,11 @@ export async function POST(
       isSimulated: !isLiveSandbox,
     };
 
-    goal.status = "paid";
-    goal.paypalCaptureId = captureId;
-    goal.capturedAmount = capturedAmount;
-    goal.capturedCurrency = capturedCurrency;
-    goal.paidAt = new Date().toISOString();
     goal.timeline.push(ev1, ev2);
     db.saveGoal(goal);
 
-    // Update customer ledger
-    if (goal.customerId) {
-      const customer = db.getCustomerById(goal.customerId);
-      if (customer) {
-        customer.outstandingAmount = Math.max(0, customer.outstandingAmount - goal.amount);
-        customer.lastPaymentDate = new Date().toISOString().split("T")[0];
-        customer.lastPaymentAmount = goal.amount;
-        customer.paymentHistory.push({
-          id: `hist_${Date.now()}`,
-          date: customer.lastPaymentDate,
-          amount: goal.amount,
-          currency: goal.currency,
-          paypalOrderId: goal.paypalOrderId || captureId,
-          status: "completed",
-          purpose: goal.purpose || goal.goal,
-          isSimulated: !isLiveSandbox,
-        });
-        db.saveCustomer(customer);
-      }
-    }
+    // Reconcile payment and customer ledger idempotently
+    db.reconcilePayment(goal.id, captureId, capturedAmount, capturedCurrency, !isLiveSandbox);
 
     const pendingApprovalGoal = db.getGoals().find((g) => g.status === "pending_approval");
     const nextActionSuggestion = pendingApprovalGoal

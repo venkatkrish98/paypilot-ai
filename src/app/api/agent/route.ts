@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { defaultOrchestrator } from "@/packages/agent";
+import { checkWriteAuthorization } from "@/packages/security/auth";
 
 export async function POST(req: Request) {
   try {
+    const auth = checkWriteAuthorization(req);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
+    }
+
     const body = await req.json();
     const query = body?.query || body?.message || body?.goal;
 

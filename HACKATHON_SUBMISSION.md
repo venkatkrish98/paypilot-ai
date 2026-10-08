@@ -136,9 +136,9 @@ User Intent ("Collect $1,200 from Sarah by Friday")
 ## 7. Submission Checklist & Evidence Needed
 
 - [x] **Working PayPal Sandbox Integration:** Direct integration with `/v1/oauth2/token`, `/v2/checkout/orders`, and capture.
-- [x] **Truthful Simulation Path:** Clearly distinguished simulation mode when credentials are not configured.
+- [x] **Truthful Simulation Path:** Clearly distinguished simulation mode with in-app simulation checkout preview.
 - [x] **Real AI Integration:** Google Gemini 2.5 Flash via `@google/genai` with deterministic fallback.
-- [x] **10/10 Automated Tests Passing:** Verified with Vitest.
-- [x] **Clean Next.js Build & ESLint:** Zero errors or warnings.
-- [ ] **Open-Source Repository:** Ensure repository contains an open-source license (e.g. MIT).
+- [x] **19/19 Automated Tests Passing:** Verified with Vitest (100% green).
+- [x] **Clean Next.js Build & ESLint:** Zero errors or warnings (`npm run build` and `npm run lint`).
+- [x] **Open-Source Repository:** Public GitHub repository (`https://github.com/venkatkrish98/paypilot-ai`) with MIT license.
 - [ ] **Demo Video Recording:** Record 2:30 video following the exact script in Section 6.

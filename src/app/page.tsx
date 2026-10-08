@@ -7,6 +7,7 @@ import { HeroDemoFlow } from "@/components/HeroDemoFlow";
 import { AgentCommandCenter, ChatMessage } from "@/components/AgentCommandCenter";
 import { PaymentGoalsTable } from "@/components/PaymentGoalsTable";
 import { PaymentDetailModal } from "@/components/PaymentDetailModal";
+import { SimulationCheckoutModal } from "@/components/SimulationCheckoutModal";
 import { ApprovalsQueue } from "@/components/ApprovalsQueue";
 import { CustomersView } from "@/components/CustomersView";
 import { MemoryView } from "@/components/MemoryView";
@@ -21,6 +22,8 @@ export default function Home() {
   const [goals, setGoals] = useState<PaymentGoal[]>([]);
   const [recommendations, setRecommendations] = useState<AIRecommendation[]>([]);
   const [selectedGoal, setSelectedGoal] = useState<PaymentGoal | null>(null);
+  const [simulationGoal, setSimulationGoal] = useState<PaymentGoal | null>(null);
+  const [isSimModalOpen, setIsSimModalOpen] = useState<boolean>(false);
   const [isResetting, setIsResetting] = useState<boolean>(false);
   const [isOpenMobile, setIsOpenMobile] = useState<boolean>(false);
   const [isDark, setIsDark] = useState<boolean>(true);
@@ -317,6 +320,10 @@ export default function Home() {
                 if (target) setSelectedGoal(target);
                 setCurrentTab("approvals");
               }}
+              onOpenSimulationCheckout={(goal) => {
+                setSimulationGoal(goal);
+                setIsSimModalOpen(true);
+              }}
               mode={mode}
             />
 
@@ -356,6 +363,10 @@ export default function Home() {
                   setMessages={setChatMessages}
                   onGoalUpdated={fetchData}
                   onOpenDetails={(g) => setSelectedGoal(g)}
+                  onOpenSimulationCheckout={(goal) => {
+                    setSimulationGoal(goal);
+                    setIsSimModalOpen(true);
+                  }}
                   mode={mode}
                 />
               </div>
@@ -371,6 +382,10 @@ export default function Home() {
               setMessages={setChatMessages}
               onGoalUpdated={fetchData}
               onOpenDetails={(g) => setSelectedGoal(g)}
+              onOpenSimulationCheckout={(goal) => {
+                setSimulationGoal(goal);
+                setIsSimModalOpen(true);
+              }}
               mode={mode}
             />
           </div>
@@ -417,6 +432,26 @@ export default function Home() {
           onClose={() => setSelectedGoal(null)}
           onSimulatePayment={handleSimulatePayment}
           onApprovePayment={handleApproveGoal}
+          onOpenSimulationCheckout={(goal) => {
+            setSelectedGoal(null);
+            setSimulationGoal(goal);
+            setIsSimModalOpen(true);
+          }}
+        />
+
+        {/* In-App Simulation Checkout Preview Modal */}
+        <SimulationCheckoutModal
+          goal={simulationGoal}
+          isOpen={isSimModalOpen}
+          onClose={() => {
+            setIsSimModalOpen(false);
+            setSimulationGoal(null);
+          }}
+          onCapture={async (goalId) => {
+            await handleSimulatePayment(goalId);
+            setIsSimModalOpen(false);
+            setSimulationGoal(null);
+          }}
         />
       </main>
     </div>

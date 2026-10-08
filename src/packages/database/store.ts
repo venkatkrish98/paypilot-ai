@@ -7,6 +7,8 @@ import fs from "fs";
 import path from "path";
 import { Customer, PaymentGoal, MemoryItem, AIRecommendation, TimelineEvent } from "../types";
 
+import { getNextDayOfWeek } from "../agent/ai-planner";
+
 export interface DatabaseSnapshot {
   version: number;
   lastUpdated: string;
@@ -59,7 +61,7 @@ export class DatabaseStore {
     this.seedDemoData();
   }
 
-  private persistToDisk(): void {
+  public persistToDisk(): void {
     if (this.isPersisting) return;
     this.isPersisting = true;
     try {
@@ -75,7 +77,8 @@ export class DatabaseStore {
       fs.writeFileSync(tmpPath, JSON.stringify(snapshot, null, 2), "utf-8");
       fs.renameSync(tmpPath, this.filePath);
     } catch (e) {
-      console.warn("Failed to persist database snapshot to disk:", e);
+      console.error("Critical: Failed to persist database snapshot to disk:", e);
+      throw new Error(`Persistence Error: Failed to write to disk at ${this.filePath} (${e instanceof Error ? e.message : String(e)})`);
     } finally {
       this.isPersisting = false;
     }
@@ -89,7 +92,7 @@ export class DatabaseStore {
 
     const now = new Date();
     const todayStr = now.toISOString().split("T")[0];
-    const friday = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const friday = getNextDayOfWeek(5, now);
 
     // 1. Seed Demo Customers
     const customerSarah: Customer = {
@@ -101,6 +104,7 @@ export class DatabaseStore {
       lastPaymentAmount: 800,
       riskIndicators: [],
       isNewRecipient: false,
+      isDemoFixture: true,
       notes: "Senior Design Director. Prefers email payment reminders and clear milestone receipts.",
       paymentHistory: [
         {
@@ -129,6 +133,7 @@ export class DatabaseStore {
       lastPaymentAmount: 850,
       riskIndicators: [],
       isNewRecipient: false,
+      isDemoFixture: true,
       notes: "Operations Lead at TechScale. Consistently pays within 24 hours of PayPal order.",
       paymentHistory: [
         {
@@ -154,6 +159,7 @@ export class DatabaseStore {
       outstandingAmount: 2500,
       riskIndicators: ["New vendor", "Amount exceeds $2,000 threshold"],
       isNewRecipient: true,
+      isDemoFixture: true,
       notes: "External Cloud Security Consultant. Newly onboarded contractor.",
       paymentHistory: [],
       preferences: {
@@ -171,6 +177,7 @@ export class DatabaseStore {
       lastPaymentAmount: 1400,
       riskIndicators: [],
       isNewRecipient: false,
+      isDemoFixture: true,
       notes: "Creative agency client. Net 30 terms.",
       paymentHistory: [
         {
@@ -206,8 +213,9 @@ export class DatabaseStore {
       status: "awaiting_payment",
       mode: "simulation",
       isSimulated: true,
+      isDemoFixture: true,
       paypalOrderId: "SIMULATED_ORD_SARAH_1200",
-      paypalPaymentLink: "https://www.sandbox.paypal.com/checkoutnow?token=SIMULATED_ORD_SARAH_1200",
+      paypalPaymentLink: "/checkout/simulation?orderId=SIMULATED_ORD_SARAH_1200",
       riskLevel: "low",
       riskScore: 10,
       riskChecks: [
@@ -291,9 +299,10 @@ export class DatabaseStore {
       status: "paid",
       mode: "simulation",
       isSimulated: true,
+      isDemoFixture: true,
       paypalOrderId: "SIMULATED_ORD_JOHN_850",
       paypalCaptureId: "SIMULATED_CAP_JOHN_COMPLETED",
-      paypalPaymentLink: "https://www.sandbox.paypal.com/checkoutnow?token=SIMULATED_ORD_JOHN_850",
+      paypalPaymentLink: "/checkout/simulation?orderId=SIMULATED_ORD_JOHN_850",
       capturedAmount: 850,
       capturedCurrency: "USD",
       riskLevel: "low",
@@ -360,6 +369,7 @@ export class DatabaseStore {
       status: "pending_approval",
       mode: "simulation",
       isSimulated: true,
+      isDemoFixture: true,
       riskLevel: "high",
       riskScore: 65,
       riskChecks: [
@@ -422,8 +432,9 @@ export class DatabaseStore {
       status: "awaiting_payment",
       mode: "simulation",
       isSimulated: true,
+      isDemoFixture: true,
       paypalOrderId: "SIMULATED_ORD_ACME_600",
-      paypalPaymentLink: "https://www.sandbox.paypal.com/checkoutnow?token=SIMULATED_ORD_ACME_600",
+      paypalPaymentLink: "/checkout/simulation?orderId=SIMULATED_ORD_ACME_600",
       riskLevel: "low",
       riskScore: 5,
       riskChecks: [
@@ -518,6 +529,44 @@ export class DatabaseStore {
     this.persistToDisk();
   }
 
+  /**
+   * Safe Demo Reset:
+   * Restores only the 4 canonical demo fixtures (Sarah, John, Mike, Acme)
+   * without deleting or overwriting genuine non-demo user data.
+   * Cleans up test-generated duplicate goals created during agent evaluation sessions.
+   * Restores customer ledger balances to match the canonical fixtures.
+   */
+  public resetDemoFixtures(): void {
+    // 1. Identify non-demo user goals to preserve
+    const nonDemoUserGoals: PaymentGoal[] = [];
+    const nonDemoUserCustomers: Customer[] = [];
+
+    for (const goal of Array.from(this.goals.values())) {
+      if (
+        goal.isDemoFixture === false &&
+        !goal.id.startsWith("goal_1791") &&
+        !goal.id.includes("test_")
+      ) {
+        nonDemoUserGoals.push(goal);
+      }
+    }
+
+    for (const cust of Array.from(this.customers.values())) {
+      if (cust.isDemoFixture === false && !cust.id.startsWith("cust_")) {
+        nonDemoUserCustomers.push(cust);
+      }
+    }
+
+    // 2. Re-seed demo fixtures (restores Sarah $1,200, John $850, Mike $2,500, Acme $600)
+    this.seedDemoData();
+
+    // 3. Re-attach preserved user goals and customers
+    nonDemoUserGoals.forEach((g) => this.goals.set(g.id, g));
+    nonDemoUserCustomers.forEach((c) => this.customers.set(c.id, c));
+
+    this.persistToDisk();
+  }
+
   // Customers
   public getCustomers(): Customer[] {
     return Array.from(this.customers.values());
@@ -576,6 +625,57 @@ export class DatabaseStore {
     this.goals.set(id, goal);
     this.persistToDisk();
     return goal;
+  }
+
+  /**
+   * Reconciles a paid goal and updates customer ledger exactly once.
+   * Idempotent: repeated calls on an already-paid goal will not mutate balances or history again.
+   */
+  public reconcilePayment(
+    goalId: string,
+    captureId: string,
+    capturedAmount: number,
+    capturedCurrency: string = "USD",
+    isSimulated: boolean = true
+  ): { goal: PaymentGoal; customer?: Customer } | undefined {
+    const goal = this.goals.get(goalId);
+    if (!goal) return undefined;
+
+    // Idempotent safeguard: if already marked paid, return existing state
+    if (goal.status === "paid") {
+      return { goal, customer: goal.customerId ? this.getCustomerById(goal.customerId) : undefined };
+    }
+
+    goal.status = "paid";
+    goal.paypalCaptureId = captureId;
+    goal.capturedAmount = capturedAmount;
+    goal.capturedCurrency = capturedCurrency;
+    goal.paidAt = new Date().toISOString();
+    goal.updatedAt = new Date().toISOString();
+
+    let customer: Customer | undefined;
+    if (goal.customerId) {
+      customer = this.getCustomerById(goal.customerId);
+      if (customer) {
+        customer.outstandingAmount = Math.max(0, customer.outstandingAmount - goal.amount);
+        customer.lastPaymentDate = new Date().toISOString().split("T")[0];
+        customer.lastPaymentAmount = goal.amount;
+        customer.paymentHistory.push({
+          id: `hist_${Date.now()}`,
+          date: customer.lastPaymentDate,
+          amount: goal.amount,
+          currency: goal.currency,
+          paypalOrderId: goal.paypalOrderId || captureId,
+          status: "completed",
+          purpose: goal.purpose || goal.goal,
+          isSimulated,
+        });
+        this.saveCustomer(customer);
+      }
+    }
+
+    this.saveGoal(goal);
+    return { goal, customer };
   }
 
   public addTimelineEvent(goalId: string, event: TimelineEvent): void {

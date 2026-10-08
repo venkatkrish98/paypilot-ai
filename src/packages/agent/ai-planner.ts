@@ -30,6 +30,8 @@ export interface AIPlanningOutput {
 export class AIPlanner {
   private client: GoogleGenAI | null = null;
   private hasApiKey: boolean = false;
+  private geminiVerified: boolean = false;
+  private lastEngineUsed: "gemini" | "deterministic" = "deterministic";
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -45,6 +47,14 @@ export class AIPlanner {
 
   public isAIAvailable(): boolean {
     return this.hasApiKey && this.client !== null;
+  }
+
+  public hasVerifiedGemini(): boolean {
+    return this.geminiVerified;
+  }
+
+  public getLastEngine(): "gemini" | "deterministic" {
+    return this.lastEngineUsed;
   }
 
   /**
@@ -108,12 +118,14 @@ Output MUST strictly follow the JSON schema.`,
         const text = response.text;
         if (text) {
           const parsed = JSON.parse(text);
+          this.geminiVerified = true;
+          this.lastEngineUsed = "gemini";
           return {
             action: parsed.action || "unknown",
             customerName: parsed.customerName,
             amount: typeof parsed.amount === "number" ? parsed.amount : undefined,
             currency: parsed.currency || "USD",
-            deadline: parsed.deadline,
+            deadline: parsed.deadline || parseRelativeDate(boundedQuery),
             purpose: parsed.purpose,
             memoryValue: parsed.memoryValue,
             confidence: parsed.confidence || 0.95,
@@ -127,6 +139,7 @@ Output MUST strictly follow the JSON schema.`,
     }
 
     // 3. Disclosed Deterministic Fallback Parser
+    this.lastEngineUsed = "deterministic";
     return this.deterministicParse(boundedQuery);
   }
 
@@ -212,15 +225,8 @@ Output MUST strictly follow the JSON schema.`,
       customerName = "New Vendor";
     }
 
-    // Detect Deadline
-    let deadline: string = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    if (q.includes("friday")) {
-      deadline = "2026-10-16";
-    } else if (q.includes("tomorrow")) {
-      deadline = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    } else if (q.includes("today")) {
-      deadline = new Date().toISOString().split("T")[0];
-    }
+    // Detect Deadline (relative to current date)
+    const deadline = parseRelativeDate(query);
 
     // Detect Purpose
     let purpose = "Professional Services";
@@ -256,3 +262,66 @@ Output MUST strictly follow the JSON schema.`,
 }
 
 export const defaultAIPlanner = new AIPlanner();
+
+/**
+ * Calculates the next upcoming occurrence of a given day of the week.
+ * @param targetDay 0 = Sunday, 1 = Monday, ..., 5 = Friday, 6 = Saturday
+ * @param fromDate Reference date, defaults to current time
+ */
+export function getNextDayOfWeek(targetDay: number, fromDate: Date = new Date()): string {
+  const result = new Date(fromDate.getTime());
+  const currentDay = result.getDay();
+  let daysUntil = (targetDay - currentDay + 7) % 7;
+  // If target day is today, schedule for next week's occurrence (7 days out)
+  if (daysUntil === 0) {
+    daysUntil = 7;
+  }
+  result.setDate(result.getDate() + daysUntil);
+  return result.toISOString().split("T")[0];
+}
+
+/**
+ * Parses user input to extract relative deadlines dynamically (e.g., 'friday', 'tomorrow', 'today', 'in 3 days').
+ */
+export function parseRelativeDate(query: string, referenceDate: Date = new Date()): string {
+  const q = query.toLowerCase();
+
+  // Match day names
+  if (q.includes("friday")) return getNextDayOfWeek(5, referenceDate);
+  if (q.includes("monday")) return getNextDayOfWeek(1, referenceDate);
+  if (q.includes("tuesday")) return getNextDayOfWeek(2, referenceDate);
+  if (q.includes("wednesday")) return getNextDayOfWeek(3, referenceDate);
+  if (q.includes("thursday")) return getNextDayOfWeek(4, referenceDate);
+  if (q.includes("saturday")) return getNextDayOfWeek(6, referenceDate);
+  if (q.includes("sunday")) return getNextDayOfWeek(0, referenceDate);
+
+  // Match relative keywords
+  if (q.includes("today")) {
+    return referenceDate.toISOString().split("T")[0];
+  }
+  if (q.includes("tomorrow")) {
+    const d = new Date(referenceDate.getTime());
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  }
+  if (q.includes("next week")) {
+    const d = new Date(referenceDate.getTime());
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().split("T")[0];
+  }
+
+  // Match "in X days"
+  const inDaysMatch = q.match(/in\s+(\d+)\s+days?/);
+  if (inDaysMatch) {
+    const days = parseInt(inDaysMatch[1], 10);
+    const d = new Date(referenceDate.getTime());
+    d.setDate(d.getDate() + days);
+    return d.toISOString().split("T")[0];
+  }
+
+  // Default: 4 days from reference date
+  const defaultDate = new Date(referenceDate.getTime());
+  defaultDate.setDate(defaultDate.getDate() + 4);
+  return defaultDate.toISOString().split("T")[0];
+}
+

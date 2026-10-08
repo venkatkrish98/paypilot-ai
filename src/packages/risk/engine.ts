@@ -192,3 +192,4 @@ export class PaymentSafetyEngine {
 }
 
 export const defaultSafetyEngine = new PaymentSafetyEngine();
+export const defaultRiskEngine = defaultSafetyEngine;

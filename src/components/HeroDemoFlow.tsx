@@ -17,12 +17,14 @@ import { PaymentGoal, ExecutionMode } from "@/packages/types";
 interface HeroDemoFlowProps {
   onFlowCompleted: () => void;
   onOpenApproval: (goalId: string) => void;
+  onOpenSimulationCheckout?: (goal: PaymentGoal) => void;
   mode: ExecutionMode;
 }
 
 export const HeroDemoFlow: React.FC<HeroDemoFlowProps> = ({
   onFlowCompleted,
   onOpenApproval,
+  onOpenSimulationCheckout,
   mode,
 }) => {
   const [currentStep, setCurrentStep] = useState<number>(0);
@@ -289,15 +291,27 @@ export const HeroDemoFlow: React.FC<HeroDemoFlowProps> = ({
 
               <div className="flex items-center space-x-2">
                 {createdGoal.paypalPaymentLink && (
-                  <a
-                    href={createdGoal.paypalPaymentLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-slate-700 transition"
-                  >
-                    <span>{createdGoal.isSimulated ? "Preview Simulated Link" : "Open PayPal Sandbox"}</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  createdGoal.isSimulated ? (
+                    <button
+                      onClick={() => onOpenSimulationCheckout?.(createdGoal)}
+                      className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 text-purple-700 dark:text-purple-300 text-xs font-semibold border border-purple-200 dark:border-purple-700/60 transition"
+                      aria-label="Open Simulation Checkout Preview"
+                    >
+                      <span>Simulation Checkout</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  ) : (
+                    <a
+                      href={createdGoal.paypalPaymentLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-slate-700 transition"
+                      aria-label="Open PayPal Sandbox Checkout"
+                    >
+                      <span>Open PayPal Sandbox</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )
                 )}
 
                 <button

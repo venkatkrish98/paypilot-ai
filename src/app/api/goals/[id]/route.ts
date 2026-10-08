@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 import { GoalStatus } from "@/packages/types";
 
+import { checkWriteAuthorization } from "@/packages/security/auth";
+
 export async function GET(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
+    if (!params.id || typeof params.id !== "string") {
+      return NextResponse.json({ error: "Invalid Goal ID format" }, { status: 400 });
+    }
     const goal = db.getGoalById(params.id);
     if (!goal) {
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
@@ -25,10 +30,33 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    const auth = checkWriteAuthorization(req);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
+    }
+
+    if (!params.id || typeof params.id !== "string") {
+      return NextResponse.json({ error: "Invalid Goal ID format" }, { status: 400 });
+    }
+
     const body = await req.json();
     const existing = db.getGoalById(params.id);
     if (!existing) {
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
+    }
+
+    // Immutable Terminal States
+    if (existing.status === "paid") {
+      return NextResponse.json(
+        { error: "Cannot modify payment goal: reconciled paid transactions are immutable." },
+        { status: 400 }
+      );
+    }
+    if (existing.status === "cancelled") {
+      return NextResponse.json(
+        { error: "Cannot modify cancelled payment goal." },
+        { status: 400 }
+      );
     }
 
     // Whitelist allowed fields to prevent arbitrary field corruption
@@ -60,8 +88,16 @@ export async function PATCH(
         );
       }
 
+      // CRITICAL: Prevent bypassing human approval
+      if (existing.status === "pending_approval" && body.status === "awaiting_payment") {
+        return NextResponse.json(
+          { error: "Forbidden: Cannot bypass approval workflow. Goals pending approval must be authorized via the /approve endpoint." },
+          { status: 403 }
+        );
+      }
+
       // Disallow manual skip to "paid" without capture validation
-      if (body.status === "paid" && existing.status !== "paid") {
+      if (body.status === "paid") {
         return NextResponse.json(
           { error: "Cannot manually transition goal to 'paid'. Use the /capture endpoint to confirm payment." },
           { status: 400 }

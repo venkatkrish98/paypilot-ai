@@ -81,6 +81,7 @@ export interface PaymentGoal {
   paidAt?: string;
   timeline: TimelineEvent[];
   notes?: string;
+  isDemoFixture?: boolean;
 }
 
 export interface CustomerPaymentRecord {
@@ -109,6 +110,7 @@ export interface Customer {
     reminderChannel?: "email" | "sms" | "paypal";
     customNote?: string;
   };
+  isDemoFixture?: boolean;
 }
 
 export type AgentCapability =
@@ -211,5 +213,8 @@ export interface SafeSystemConfig {
   reviewThreshold: number;
   storageType: "local_durable_file";
   aiProvider: string;
+  geminiLiveVerified: boolean;
+  environmentEnforced: "sandbox" | "simulation";
+  writesProtected: boolean;
   demoMode: boolean;
 }

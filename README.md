@@ -7,7 +7,7 @@
 [![Next.js 14](https://img.shields.io/badge/Next.js-14.2%20App%20Router-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38BDF8?logo=tailwind-css)](https://tailwindcss.com)
-[![Tests Passing](https://img.shields.io/badge/Tests-10%2F10%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
+[![Tests Passing](https://img.shields.io/badge/Tests-19%2F19%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
 [![ESLint Passing](https://img.shields.io/badge/ESLint-Clean-brightgreen?logo=eslint)](https://eslint.org)
 
 ---
@@ -205,25 +205,35 @@ Run the automated test suite:
 npm test
 ```
 
-### Covered Test Cases:
+### Covered Test Cases (19/19 Passing):
 1. `Create payment goal` — Parameter verification and storage.
 2. `Customer lookup` — Profile resolution and payment history retrieval.
-3. `Truthful Simulation labeling` — Orders unmistakably marked `SIMULATED_ORD_...`.
-4. `Capture validation` — Confirms amount and currency match expected values.
-5. `Amount mismatch rejection` — Rejection of invalid capture amounts.
-6. `Duplicate payment prevention` — 24-hour duplicate detection.
-7. `Risk detection` — Threshold and new recipient flags.
-8. `Approval workflow & idempotency` — State holding in `pending_approval` until human authorization.
-9. `Payment status update` — Transition to `paid` with timeline progression.
-10. `Hero E2E flow` — Complete lifecycle with explicit simulation tags when unconfigured.
+3. `Truthful Simulation labeling` — Orders marked `SIMULATED_ORD_...` with in-app simulation checkout preview.
+4. `Live Production Blocked` — Strictly enforces PayPal Sandbox safety and rejects live production credentials.
+5. `Capture validation` — Confirms amount and currency match expected values in simulation.
+6. `Unapproved Order Rejection` — Confirms PayPal Sandbox capture requires buyer approval before capture.
+7. `Amount mismatch rejection` — Rejection of invalid capture amounts returned by PayPal.
+8. `Currency mismatch rejection` — Rejection of mismatched currencies returned by PayPal.
+9. `Non-completed capture rejection` — Rejection of non-completed captures (e.g. `PENDING`, `FAILED`).
+10. `Duplicate payment prevention` — 24-hour duplicate detection.
+11. `Risk detection` — Threshold and new recipient flags.
+12. `Payout vs Collection separation` — Distinguishes payout governance from inbound Orders checkout.
+13. `Dynamic relative Friday dates` — Relative dates calculated dynamically without stale hardcoded values.
+14. `Customer ledger balance consistency` — Idempotent reconciliation of customer balances upon capture.
+15. `Safe Demo Reset` — Restores 4 canonical fixtures without erasing non-demo user records.
+16. `Persistence failure error surfacing` — Errors thrown and surfaced when disk snapshot writes fail.
+17. `Approval bypass prevention` — Prevents skipping human review via direct status mutations.
+18. `Pending approval capture rejection` — Rejects capture attempts on goals awaiting approval.
+19. `Idempotent approvals` — Rejects duplicate approvals and protects against double-processing.
 
 ---
 
-## Current Limitations & Submission Evidence
+## Current Architecture, Persistence Limits & Submission Evidence
 
-- **Outbound Notifications:** Reminders are drafted by the Notification Agent and logged on the audit timeline. Delivery through external email providers (e.g. SendGrid/Resend) is mocked for safe local testing.
-- **Vendor Disbursements vs. Buyer Collections:** PayPal Orders v2 processes incoming customer collections. Outbound payments to vendors (like Mike Reynolds) represent disbursement review goals held for administrative sign-off.
+- **Local File Persistence Limits:** Data is stored in `data/paypilot_db.json`. This provides durable persistence across restarts for single-instance hackathon deployments. Multi-instance horizontal scaling would require external database storage (e.g. Cloud SQL / Firestore). Persistence errors are surfaced to callers rather than returning silent success.
+- **In-App Simulation Checkout:** Simulation mode orders generate in-app checkout previews (`/checkout/simulation?orderId=...`) rather than sending users to live paypal.com with fabricated tokens.
+- **Vendor Disbursements vs. Buyer Collections:** PayPal Orders v2 processes incoming customer collections. Outbound payments to vendors (like Mike Reynolds) represent disbursement review simulations held for administrative sign-off; they are not sent to Orders v2.
 - **Required Submission Evidence:**
-  - Public GitHub repository with open-source license.
+  - Public GitHub repository with open-source MIT license (`https://github.com/venkatkrish98/paypilot-ai`).
   - 2.5-minute demo video script provided in `HACKATHON_SUBMISSION.md`.
   - PayPal Sandbox Developer credentials for live end-to-end buyer checkout verification.
