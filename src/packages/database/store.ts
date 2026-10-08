@@ -1,0 +1,656 @@
+// ==============================================================================
+// PayPilot AI - Durable File Database Store & Seed Data
+// Persists Payment Goals, Customers, Memory, and Activity Logs to local JSON storage
+// ==============================================================================
+
+import fs from "fs";
+import path from "path";
+import { Customer, PaymentGoal, MemoryItem, AIRecommendation, TimelineEvent } from "../types";
+
+export interface DatabaseSnapshot {
+  version: number;
+  lastUpdated: string;
+  customers: Customer[];
+  goals: PaymentGoal[];
+  memories: MemoryItem[];
+  recommendations: AIRecommendation[];
+}
+
+export class DatabaseStore {
+  private customers: Map<string, Customer> = new Map();
+  private goals: Map<string, PaymentGoal> = new Map();
+  private memories: Map<string, MemoryItem> = new Map();
+  private recommendations: Map<string, AIRecommendation> = new Map();
+  private filePath: string;
+  private isPersisting: boolean = false;
+
+  constructor(customFilePath?: string) {
+    const dataDir = path.resolve(process.cwd(), "data");
+    if (!fs.existsSync(dataDir)) {
+      try {
+        fs.mkdirSync(dataDir, { recursive: true });
+      } catch (e) {
+        console.warn("Could not create data directory, using memory fallback:", e);
+      }
+    }
+    this.filePath = customFilePath || path.join(dataDir, "paypilot_db.json");
+    this.loadFromDisk();
+  }
+
+  private loadFromDisk(): void {
+    try {
+      if (fs.existsSync(this.filePath)) {
+        const raw = fs.readFileSync(this.filePath, "utf-8");
+        const data: DatabaseSnapshot = JSON.parse(raw);
+        this.customers.clear();
+        this.goals.clear();
+        this.memories.clear();
+        this.recommendations.clear();
+
+        data.customers?.forEach((c) => this.customers.set(c.id, c));
+        data.goals?.forEach((g) => this.goals.set(g.id, g));
+        data.memories?.forEach((m) => this.memories.set(m.id, m));
+        data.recommendations?.forEach((r) => this.recommendations.set(r.id, r));
+        return;
+      }
+    } catch (e) {
+      console.warn("Error reading database file, reseeding defaults:", e);
+    }
+    this.seedDemoData();
+  }
+
+  private persistToDisk(): void {
+    if (this.isPersisting) return;
+    this.isPersisting = true;
+    try {
+      const snapshot: DatabaseSnapshot = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        customers: Array.from(this.customers.values()),
+        goals: Array.from(this.goals.values()),
+        memories: Array.from(this.memories.values()),
+        recommendations: Array.from(this.recommendations.values()),
+      };
+      const tmpPath = `${this.filePath}.tmp`;
+      fs.writeFileSync(tmpPath, JSON.stringify(snapshot, null, 2), "utf-8");
+      fs.renameSync(tmpPath, this.filePath);
+    } catch (e) {
+      console.warn("Failed to persist database snapshot to disk:", e);
+    } finally {
+      this.isPersisting = false;
+    }
+  }
+
+  public seedDemoData(): void {
+    this.customers.clear();
+    this.goals.clear();
+    this.memories.clear();
+    this.recommendations.clear();
+
+    const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+    const friday = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+    // 1. Seed Demo Customers
+    const customerSarah: Customer = {
+      id: "cust_sarah",
+      name: "Sarah Jenkins",
+      email: "sarah.jenkins@designcraft.io",
+      outstandingAmount: 1200,
+      lastPaymentDate: "2026-10-02",
+      lastPaymentAmount: 800,
+      riskIndicators: [],
+      isNewRecipient: false,
+      notes: "Senior Design Director. Prefers email payment reminders and clear milestone receipts.",
+      paymentHistory: [
+        {
+          id: "hist_sarah_1",
+          date: "2026-10-02",
+          amount: 800,
+          currency: "USD",
+          paypalOrderId: "SIMULATED_ORD_SARAH_01",
+          status: "completed",
+          purpose: "UI/UX Milestone Phase 1",
+          isSimulated: true,
+        },
+      ],
+      preferences: {
+        reminderChannel: "email",
+        customNote: "Remind politely 24h prior to milestone cutoff.",
+      },
+    };
+
+    const customerJohn: Customer = {
+      id: "cust_john",
+      name: "Johnathan Doe",
+      email: "john.doe@techscale.com",
+      outstandingAmount: 0,
+      lastPaymentDate: todayStr,
+      lastPaymentAmount: 850,
+      riskIndicators: [],
+      isNewRecipient: false,
+      notes: "Operations Lead at TechScale. Consistently pays within 24 hours of PayPal order.",
+      paymentHistory: [
+        {
+          id: "hist_john_1",
+          date: todayStr,
+          amount: 850,
+          currency: "USD",
+          paypalOrderId: "SIMULATED_ORD_JOHN_850",
+          status: "completed",
+          purpose: "Frontend Optimization Sprint",
+          isSimulated: true,
+        },
+      ],
+      preferences: {
+        reminderChannel: "email",
+      },
+    };
+
+    const customerMike: Customer = {
+      id: "cust_mike",
+      name: "Mike Reynolds",
+      email: "mike.reynolds@apexconsulting.com",
+      outstandingAmount: 2500,
+      riskIndicators: ["New vendor", "Amount exceeds $2,000 threshold"],
+      isNewRecipient: true,
+      notes: "External Cloud Security Consultant. Newly onboarded contractor.",
+      paymentHistory: [],
+      preferences: {
+        reminderChannel: "email",
+        customNote: "High-value vendor disbursement requiring administrative sign-off.",
+      },
+    };
+
+    const customerAcme: Customer = {
+      id: "cust_acme",
+      name: "Acme Studio",
+      email: "billing@acmestudio.design",
+      outstandingAmount: 600,
+      lastPaymentDate: "2026-09-20",
+      lastPaymentAmount: 1400,
+      riskIndicators: [],
+      isNewRecipient: false,
+      notes: "Creative agency client. Net 30 terms.",
+      paymentHistory: [
+        {
+          id: "hist_acme_1",
+          date: "2026-09-20",
+          amount: 1400,
+          currency: "USD",
+          paypalOrderId: "SIMULATED_ORD_ACME_1400",
+          status: "completed",
+          purpose: "Brand Identity Guideline",
+          isSimulated: true,
+        },
+      ],
+    };
+
+    this.customers.set(customerSarah.id, customerSarah);
+    this.customers.set(customerJohn.id, customerJohn);
+    this.customers.set(customerMike.id, customerMike);
+    this.customers.set(customerAcme.id, customerAcme);
+
+    // 2. Seed Demo Payment Goals
+    // Goal 1: Sarah — $1,200 — Awaiting Payment (Collection)
+    const goalSarah: PaymentGoal = {
+      id: "goal_sarah_1200",
+      goal: "Collect payment from Sarah for the website project",
+      goalType: "collection",
+      customer: "Sarah Jenkins",
+      customerId: "cust_sarah",
+      amount: 1200,
+      currency: "USD",
+      deadline: friday,
+      purpose: "Website Project - Phase 2 Final Delivery",
+      status: "awaiting_payment",
+      mode: "simulation",
+      isSimulated: true,
+      paypalOrderId: "SIMULATED_ORD_SARAH_1200",
+      paypalPaymentLink: "https://www.sandbox.paypal.com/checkoutnow?token=SIMULATED_ORD_SARAH_1200",
+      riskLevel: "low",
+      riskScore: 10,
+      riskChecks: [
+        {
+          id: "c1",
+          name: "Threshold Review Check",
+          passed: true,
+          severity: "info",
+          details: "Amount ($1,200) is within autonomous boundary ($2,000).",
+        },
+        {
+          id: "c2",
+          name: "Recipient Verification Check",
+          passed: true,
+          severity: "info",
+          details: "Verified recipient with prior transaction history.",
+        },
+        {
+          id: "c3",
+          name: "Duplicate Payment Detection",
+          passed: true,
+          severity: "info",
+          details: "No duplicate requests detected.",
+        },
+      ],
+      requiresApproval: false,
+      createdBy: "agent",
+      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      timeline: [
+        {
+          id: "t1",
+          timestamp: "10:32 AM",
+          stage: "goal_received",
+          title: "Goal received",
+          description: "Identified collection objective of $1,200 for Website Project.",
+        },
+        {
+          id: "t2",
+          timestamp: "10:32 AM",
+          stage: "customer_identified",
+          title: "Customer identified",
+          description: "Matched with Sarah Jenkins (sarah.jenkins@designcraft.io).",
+        },
+        {
+          id: "t3",
+          timestamp: "10:33 AM",
+          stage: "safety_checked",
+          title: "Payment safety check completed",
+          description: "All heuristic safety checks passed with Low Risk profile.",
+        },
+        {
+          id: "t4",
+          timestamp: "10:33 AM",
+          stage: "order_created",
+          title: "Simulated PayPal order created",
+          description: "Orders v2 order SIMULATED_ORD_SARAH_1200 initialized in simulation mode.",
+          isSimulated: true,
+        },
+        {
+          id: "t5",
+          timestamp: "10:33 AM",
+          stage: "awaiting_payment",
+          title: "Awaiting customer payment",
+          description: "Active monitoring listening for sandbox/simulated capture event.",
+        },
+      ],
+    };
+
+    // Goal 2: John — $850 — Paid (Collection)
+    const goalJohn: PaymentGoal = {
+      id: "goal_john_850",
+      goal: "Collect $850 for John's order",
+      goalType: "collection",
+      customer: "Johnathan Doe",
+      customerId: "cust_john",
+      amount: 850,
+      currency: "USD",
+      deadline: todayStr,
+      purpose: "Frontend Optimization Sprint",
+      status: "paid",
+      mode: "simulation",
+      isSimulated: true,
+      paypalOrderId: "SIMULATED_ORD_JOHN_850",
+      paypalCaptureId: "SIMULATED_CAP_JOHN_COMPLETED",
+      paypalPaymentLink: "https://www.sandbox.paypal.com/checkoutnow?token=SIMULATED_ORD_JOHN_850",
+      capturedAmount: 850,
+      capturedCurrency: "USD",
+      riskLevel: "low",
+      riskScore: 5,
+      riskChecks: [
+        {
+          id: "c1",
+          name: "Threshold Review Check",
+          passed: true,
+          severity: "info",
+          details: "Amount ($850) is within autonomous boundary ($2,000).",
+        },
+      ],
+      requiresApproval: false,
+      createdBy: "agent",
+      createdAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+      updatedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      paidAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      timeline: [
+        {
+          id: "tj1",
+          timestamp: "07:15 AM",
+          stage: "goal_received",
+          title: "Goal received",
+          description: "Collect $850 for Johnathan Doe.",
+        },
+        {
+          id: "tj2",
+          timestamp: "07:16 AM",
+          stage: "order_created",
+          title: "Simulated PayPal order created",
+          description: "Generated PayPal order SIMULATED_ORD_JOHN_850.",
+          isSimulated: true,
+        },
+        {
+          id: "tj3",
+          timestamp: "11:05 AM",
+          stage: "payment_detected",
+          title: "Simulated payment received",
+          description: "Simulated capture SIMULATED_CAP_JOHN_COMPLETED recorded.",
+          isSimulated: true,
+        },
+        {
+          id: "tj4",
+          timestamp: "11:05 AM",
+          stage: "goal_completed",
+          title: "Goal completed",
+          description: "Payment goal successfully reconciled.",
+        },
+      ],
+    };
+
+    // Goal 3: Mike — $2,500 — Needs Approval (Payout Review)
+    const goalMike: PaymentGoal = {
+      id: "goal_mike_2500",
+      goal: "Pay vendor Mike $2,500 for cloud security review",
+      goalType: "payout_review",
+      customer: "Mike Reynolds",
+      customerId: "cust_mike",
+      amount: 2500,
+      currency: "USD",
+      deadline: friday,
+      purpose: "Cloud Infrastructure Audit & Penetration Test",
+      status: "pending_approval",
+      mode: "simulation",
+      isSimulated: true,
+      riskLevel: "high",
+      riskScore: 65,
+      riskChecks: [
+        {
+          id: "c1",
+          name: "Threshold Review Check",
+          passed: false,
+          severity: "warning",
+          details: "Amount ($2,500) exceeds configured review threshold of $2,000.",
+        },
+        {
+          id: "c2",
+          name: "Recipient Verification Check",
+          passed: false,
+          severity: "warning",
+          details: "Mike Reynolds is a new vendor with no prior completed payouts.",
+        },
+      ],
+      requiresApproval: true,
+      approvalStatus: "pending",
+      createdBy: "user",
+      createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+      updatedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+      timeline: [
+        {
+          id: "tm1",
+          timestamp: "10:18 AM",
+          stage: "goal_received",
+          title: "Disbursement intent received",
+          description: "Vendor disbursement intent of $2,500 initiated.",
+        },
+        {
+          id: "tm2",
+          timestamp: "10:19 AM",
+          stage: "safety_checked",
+          title: "Payment safety check flagged",
+          description: "Amount exceeds $2,000 threshold and recipient is unfamiliar.",
+        },
+        {
+          id: "tm3",
+          timestamp: "10:19 AM",
+          stage: "approval_requested",
+          title: "Human approval required",
+          description: "Awaiting administrator sign-off before vendor disbursement.",
+        },
+      ],
+    };
+
+    // Goal 4: Acme Studio — $600 — Pending (Collection)
+    const goalAcme: PaymentGoal = {
+      id: "goal_acme_600",
+      goal: "Collect $600 from Acme Studio for typography licensing",
+      goalType: "collection",
+      customer: "Acme Studio",
+      customerId: "cust_acme",
+      amount: 600,
+      currency: "USD",
+      deadline: friday,
+      purpose: "Commercial Font License Extended Rights",
+      status: "awaiting_payment",
+      mode: "simulation",
+      isSimulated: true,
+      paypalOrderId: "SIMULATED_ORD_ACME_600",
+      paypalPaymentLink: "https://www.sandbox.paypal.com/checkoutnow?token=SIMULATED_ORD_ACME_600",
+      riskLevel: "low",
+      riskScore: 5,
+      riskChecks: [
+        {
+          id: "c1",
+          name: "Threshold Review Check",
+          passed: true,
+          severity: "info",
+          details: "Amount ($600) is well within boundary ($2,000).",
+        },
+      ],
+      requiresApproval: false,
+      createdBy: "agent",
+      createdAt: new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString(),
+      updatedAt: new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString(),
+      timeline: [
+        {
+          id: "ta1",
+          timestamp: "Yesterday",
+          stage: "order_created",
+          title: "Simulated PayPal order created",
+          description: "Order SIMULATED_ORD_ACME_600 generated.",
+          isSimulated: true,
+        },
+        {
+          id: "ta2",
+          timestamp: "Yesterday",
+          stage: "awaiting_payment",
+          title: "Awaiting customer payment",
+          description: "Payment link prepared for billing@acmestudio.design.",
+        },
+      ],
+    };
+
+    this.goals.set(goalSarah.id, goalSarah);
+    this.goals.set(goalJohn.id, goalJohn);
+    this.goals.set(goalMike.id, goalMike);
+    this.goals.set(goalAcme.id, goalAcme);
+
+    // 3. Seed Persistent Memories
+    const mem1: MemoryItem = {
+      id: "mem_1",
+      key: "sarah_reminder_preference",
+      value: "Sarah prefers email payment reminders with clear milestone receipts.",
+      category: "preference",
+      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    const mem2: MemoryItem = {
+      id: "mem_2",
+      key: "high_risk_threshold",
+      value: "Payments and disbursements above $2,000 require human administrative approval.",
+      category: "threshold",
+      createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+    const mem3: MemoryItem = {
+      id: "mem_3",
+      key: "currency_preference",
+      value: "Standard settlement currency is USD for all international client transactions.",
+      category: "rule",
+      createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    };
+
+    this.memories.set(mem1.id, mem1);
+    this.memories.set(mem2.id, mem2);
+    this.memories.set(mem3.id, mem3);
+
+    // 4. Seed Proactive AI Recommendations
+    const rec1: AIRecommendation = {
+      id: "rec_1",
+      title: "Pending Payment Follow-up",
+      description: "Sarah's $1,200 payment has been awaiting payment for 2 days. Would you like me to prepare a friendly reminder?",
+      actionLabel: "Prepare Follow-up",
+      actionType: "prepare_followup",
+      goalId: "goal_sarah_1200",
+      urgency: "medium",
+      createdAt: new Date().toISOString(),
+    };
+    const rec2: AIRecommendation = {
+      id: "rec_2",
+      title: "Vendor Disbursement Approval Required",
+      description: "Mike Reynolds' $2,500 payout review is pending your safety sign-off before execution.",
+      actionLabel: "Review Approval",
+      actionType: "review_approval",
+      goalId: "goal_mike_2500",
+      urgency: "high",
+      createdAt: new Date().toISOString(),
+    };
+
+    this.recommendations.set(rec1.id, rec1);
+    this.recommendations.set(rec2.id, rec2);
+
+    this.persistToDisk();
+  }
+
+  // Customers
+  public getCustomers(): Customer[] {
+    return Array.from(this.customers.values());
+  }
+
+  public getCustomerById(id: string): Customer | undefined {
+    return this.customers.get(id);
+  }
+
+  public findCustomerByName(name: string): Customer | undefined {
+    const clean = name.toLowerCase().trim();
+    return Array.from(this.customers.values()).find((c) =>
+      c.name.toLowerCase().includes(clean) || clean.includes(c.name.toLowerCase().split(" ")[0])
+    );
+  }
+
+  public saveCustomer(customer: Customer): Customer {
+    this.customers.set(customer.id, customer);
+    this.persistToDisk();
+    return customer;
+  }
+
+  // Payment Goals
+  public getGoals(): PaymentGoal[] {
+    return Array.from(this.goals.values()).sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+  }
+
+  public getGoalById(id: string): PaymentGoal | undefined {
+    return this.goals.get(id);
+  }
+
+  public saveGoal(goal: PaymentGoal): PaymentGoal {
+    goal.updatedAt = new Date().toISOString();
+    this.goals.set(goal.id, goal);
+    this.persistToDisk();
+    return goal;
+  }
+
+  public updateGoalStatus(
+    id: string,
+    status: PaymentGoal["status"],
+    timelineEvent?: TimelineEvent
+  ): PaymentGoal | undefined {
+    const goal = this.goals.get(id);
+    if (!goal) return undefined;
+    goal.status = status;
+    goal.updatedAt = new Date().toISOString();
+    if (status === "paid" && !goal.paidAt) {
+      goal.paidAt = new Date().toISOString();
+    }
+    if (timelineEvent) {
+      goal.timeline.push(timelineEvent);
+    }
+    this.goals.set(id, goal);
+    this.persistToDisk();
+    return goal;
+  }
+
+  public addTimelineEvent(goalId: string, event: TimelineEvent): void {
+    const goal = this.goals.get(goalId);
+    if (goal) {
+      goal.timeline.push(event);
+      goal.updatedAt = new Date().toISOString();
+      this.goals.set(goalId, goal);
+      this.persistToDisk();
+    }
+  }
+
+  // Memories
+  public getMemories(): MemoryItem[] {
+    return Array.from(this.memories.values());
+  }
+
+  public addMemory(key: string, value: string, category: MemoryItem["category"] = "preference"): MemoryItem {
+    const id = `mem_${Date.now()}`;
+    const mem: MemoryItem = {
+      id,
+      key,
+      value,
+      category,
+      createdAt: new Date().toISOString(),
+    };
+    this.memories.set(id, mem);
+    this.persistToDisk();
+    return mem;
+  }
+
+  // Recommendations
+  public getRecommendations(): AIRecommendation[] {
+    return Array.from(this.recommendations.values());
+  }
+
+  public dismissRecommendation(id: string): void {
+    this.recommendations.delete(id);
+    this.persistToDisk();
+  }
+
+  // KPI Metrics
+  public getMetrics() {
+    const all = this.getGoals();
+    const awaiting = all.filter((g) => g.status === "awaiting_payment" || g.status === "payment_created");
+    const paid = all.filter((g) => g.status === "paid");
+    const attention = all.filter((g) => g.status === "pending_approval" || g.riskLevel === "high");
+
+    const awaitingAmount = awaiting.reduce((sum, g) => sum + g.amount, 0);
+    const paidAmount = paid.reduce((sum, g) => sum + g.amount, 0);
+
+    const sandboxPaid = paid.filter((g) => !g.isSimulated);
+    const simulatedPaid = paid.filter((g) => g.isSimulated);
+
+    return {
+      totalGoals: all.length,
+      awaitingCount: awaiting.length,
+      awaitingAmount,
+      paidCount: paid.length,
+      paidAmount,
+      sandboxPaidCount: sandboxPaid.length,
+      sandboxPaidAmount: sandboxPaid.reduce((sum, g) => sum + g.amount, 0),
+      simulatedPaidCount: simulatedPaid.length,
+      simulatedPaidAmount: simulatedPaid.reduce((sum, g) => sum + g.amount, 0),
+      attentionCount: attention.length,
+    };
+  }
+}
+
+// Global Singleton Store for in-process & file persistence
+const globalStoreKey = Symbol.for("paypilot.database.store");
+const globalObj = globalThis as unknown as { [globalStoreKey]?: DatabaseStore };
+
+if (!globalObj[globalStoreKey]) {
+  globalObj[globalStoreKey] = new DatabaseStore();
+}
+
+export const db = globalObj[globalStoreKey]!;
