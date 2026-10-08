@@ -11,7 +11,14 @@ interface ApprovalsQueueProps {
 }
 
 export const ApprovalsQueue: React.FC<ApprovalsQueueProps> = ({ goals, onApprove, onReject }) => {
-  const pendingGoals = goals.filter((g) => g.status === "pending_approval" || g.riskLevel === "high");
+  const pendingGoals = goals.filter(
+    (g) =>
+      (g.status === "pending_approval" || (g.requiresApproval && g.approvalStatus === "pending")) &&
+      g.status !== "payout_approved" &&
+      g.status !== "paid" &&
+      g.status !== "cancelled" &&
+      g.approvalStatus !== "approved"
+  );
 
   return (
     <div className="space-y-4">

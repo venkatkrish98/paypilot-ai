@@ -497,7 +497,14 @@ export class AgentOrchestrator {
 
     const attentionGoals = db
       .getGoals()
-      .filter((g) => g.status === "pending_approval" || g.riskLevel === "high");
+      .filter(
+        (g) =>
+          (g.status === "pending_approval" || (g.requiresApproval && g.approvalStatus === "pending")) &&
+          g.status !== "payout_approved" &&
+          g.status !== "paid" &&
+          g.status !== "cancelled" &&
+          g.approvalStatus !== "approved"
+      );
     const awaitingGoals = db.getGoals().filter((g) => g.status === "awaiting_payment");
 
     steps[steps.length - 1].status = "completed";

@@ -35,7 +35,13 @@ export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
       return g.status === "awaiting_payment" || g.status === "payment_created";
     if (activeFilter === "paid") return g.status === "paid" || g.status === "payout_approved";
     if (activeFilter === "pending_approval")
-      return g.status === "pending_approval" || g.riskLevel === "high";
+      return (
+        (g.status === "pending_approval" || (g.requiresApproval && g.approvalStatus === "pending")) &&
+        g.status !== "payout_approved" &&
+        g.status !== "paid" &&
+        g.status !== "cancelled" &&
+        g.approvalStatus !== "approved"
+      );
     return true;
   });
 
@@ -104,13 +110,19 @@ export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
             },
             {
               id: "paid",
-              label: `Paid (${goals.filter((g) => g.status === "paid").length})`,
+              label: `Paid (${goals.filter((g) => g.status === "paid" || g.status === "payout_approved").length})`,
             },
             {
               id: "pending_approval",
               label: `Approvals (${
-                goals.filter((g) => g.status === "pending_approval" || g.riskLevel === "high")
-                  .length
+                goals.filter(
+                  (g) =>
+                    (g.status === "pending_approval" || (g.requiresApproval && g.approvalStatus === "pending")) &&
+                    g.status !== "payout_approved" &&
+                    g.status !== "paid" &&
+                    g.status !== "cancelled" &&
+                    g.approvalStatus !== "approved"
+                ).length
               })`,
             },
           ].map((tab) => (

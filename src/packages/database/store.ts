@@ -917,7 +917,14 @@ export class DatabaseStore {
     );
     // CRITICAL: Collected incoming customer money ONLY
     const paid = all.filter((g) => g.status === "paid" && g.goalType === "collection");
-    const attention = all.filter((g) => g.status === "pending_approval" || g.riskLevel === "high");
+    const attention = all.filter(
+      (g) =>
+        (g.status === "pending_approval" || (g.requiresApproval && g.approvalStatus === "pending")) &&
+        g.status !== "payout_approved" &&
+        g.status !== "paid" &&
+        g.status !== "cancelled" &&
+        g.approvalStatus !== "approved"
+    );
 
     const awaitingAmount = awaiting.reduce((sum, g) => sum + g.amount, 0);
     const paidAmount = paid.reduce((sum, g) => sum + g.amount, 0);

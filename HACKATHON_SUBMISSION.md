@@ -124,8 +124,8 @@ User Intent ("Collect $1,200 from Sarah by Friday")
 ### **[1:50 – 2:10] Risk Engine & Human-in-the-Loop Approval**
 - **Visual:** Agent prompts: *"Mike Reynolds' $2,500 payout review requires your approval."*
 - **Visual:** User switches to the Approvals Queue. Shows Mike Reynolds: $2,500 payment flagged because amount exceeds $2,000 threshold and recipient is unfamiliar.
-- **Visual:** User inspects the itemized safety checks and clicks **"Approve Disbursement"**.
-- **Voiceover:** *"Financial autonomy demands safety. For high-risk disbursements or new vendors, PayPilot enforces human sign-off. Once approved, the agent immediately provisions the payment order."*
+- **Visual:** User inspects the itemized safety checks and clicks **"Approve for Review"**.
+- **Voiceover:** *"Financial autonomy demands safety. For high-risk disbursements or new vendors, PayPilot enforces human sign-off. The administrator reviews the itemized risk findings and authorizes the review. PayPilot strictly gates outbound payouts—recording the safety sign-off without auto-disbursing funds—ensuring capital is never transferred without dedicated dual authorization."*
 
 ### **[2:10 – 2:30] Impact & Closing**
 - **Visual:** Overview of Memory system ("Sarah prefers email reminders"), Customer ledger, and Activity Timeline.
@@ -139,8 +139,8 @@ User Intent ("Collect $1,200 from Sarah by Friday")
 - [x] **In-UI Administrator Sandbox Authentication & Safe Execution:** Built-in "Unlock Sandbox" modal in the top header. Evaluators can enter the explicitly configured administrator key (`PAYPILOT_ADMIN_KEY`). The server issues a cryptographically signed `httpOnly` cookie (`paypilot_admin_session`) without exposing secrets to client code. Rate limiting and lockout prevent brute-force attacks. With PayPal credentials configured, authorized UI users can create real PayPal Orders v2 orders, complete buyer approval on PayPal Sandbox, and capture them.
 - [x] **Truthful Mode Reporting (`/api/config`):** `/api/config` reports the effective mode available to the current UI session (`mode: "sandbox"` only if PayPal credentials are configured AND current session is admin-authenticated; otherwise strictly `"simulation"`).
 - [x] **Cross-Visitor Data Isolation & Canonical Fixtures:** Anonymous public demo requests are tagged with a server-signed `visitorId` cookie. Visitors only see canonical fixtures (`CANONICAL_DEMO_GOAL_IDS`, `CANONICAL_DEMO_CUSTOMER_IDS`, `CANONICAL_DEMO_MEMORY_IDS`, `CANONICAL_DEMO_RECOMMENDATION_IDS`) and their own session records. Dashboard metrics are computed strictly over visible scoped goals.
-- [x] **Google Gemini 3.8 Flash Engine Verified:** Verified live SDK integration with `@google/genai` (`gemini-3.8-flash` with `GEMINI_API_KEY` configured in `.env`), with automatic verified deterministic fallback.
-- [x] **37/37 Automated Regression Tests Passing:** Verified with Vitest (100% green coverage across security, authoritative sandbox provenance, cross-visitor data isolation, UI mode truthfulness, session login/logout, idempotency, ledger, and scoping).
+- [x] **Google Gemini 3.8 Flash Dual-Engine Ready:** Integrated with `@google/genai` (`gemini-3.8-flash` via `GEMINI_API_KEY`) paired with an automated deterministic fallback ensuring complete offline resilience and 100% test reliability. Live verification status is truthfully disclosed via `/api/config` (`geminiLiveVerified`).
+- [x] **45/45 Automated Regression Tests Passing:** Verified with Vitest (100% green coverage across security, authoritative sandbox provenance, cross-visitor data isolation, shared rate-limit lockout sync, UI mode truthfulness, session login/logout, idempotency, ledger, approval queue resolution, and scoping).
 - [x] **Clean Next.js 14 Build & ESLint:** Zero build errors or linter warnings (`npm run build` and `npm run lint`).
 - [x] **Open-Source Repository:** Public GitHub repository ([venkatkrish98/paypilot-ai](https://github.com/venkatkrish98/paypilot-ai)) with open MIT license.
 - [ ] **Official Demo Video Requirements (Devpost Rules):**

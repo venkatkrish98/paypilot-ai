@@ -38,10 +38,15 @@ export const SettingsView: React.FC = () => {
             </div>
           </div>
 
-          {config?.paypalConfigured ? (
+          {config?.canExecuteSandbox ? (
             <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 flex items-center space-x-1">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>Live Sandbox Active</span>
+              <span>Live Sandbox Active (Admin Authorized)</span>
+            </span>
+          ) : config?.paypalConfigured ? (
+            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 flex items-center space-x-1">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Sandbox Configured (Admin Unlock Required)</span>
             </span>
           ) : (
             <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/15 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 flex items-center space-x-1">
@@ -55,13 +60,19 @@ export const SettingsView: React.FC = () => {
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-800 dark:text-slate-200">Execution Mode:</span>
               <span className="font-mono text-slate-600 dark:text-slate-400 uppercase font-bold text-[11px]">
-                {config?.mode || "simulation"}
+                {config?.canExecuteSandbox
+                  ? "SANDBOX (LIVE ORDERS V2)"
+                  : config?.paypalConfigured
+                  ? "SIMULATION (SANDBOX CREDENTIALS GATED)"
+                  : "SIMULATION (DETERMINISTIC)"}
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              {config?.paypalConfigured
-                ? "PayPal Client ID and Secret are configured server-side. Live sandbox orders are created and verified."
-                : "Valid sandbox credentials are not set in .env. PayPilot operates in Truthful Simulation Mode with deterministic state transitions and zero downtime."}
+              {config?.canExecuteSandbox
+                ? "PayPal Client ID & Secret verified. Evaluator admin session is authenticated: live PayPal Orders v2 sandbox orders, buyer approvals, and captures execute directly on api-m.sandbox.paypal.com."
+                : config?.paypalConfigured
+                ? "PayPal sandbox credentials (Client ID & Secret) are present in server environment, but this session is unauthenticated. To safeguard public demo usage, live sandbox order creation requires unlocking Admin mode via the top header passkey."
+                : "Valid PayPal sandbox credentials are not configured in .env. PayPilot operates in Truthful Simulation Mode with deterministic state transitions, mock orders, and zero downtime."}
             </p>
           </div>
 
@@ -73,7 +84,9 @@ export const SettingsView: React.FC = () => {
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Structured intent extraction uses Gemini 3.8 Flash when GEMINI_API_KEY is present, with an automatic verified deterministic rule-based fallback.
+              {config?.geminiLiveVerified
+                ? "Live Google Gemini 3.8 Flash engine active and verified via official @google/genai SDK with deterministic fallback safety net."
+                : "Dual-engine architecture: structured intent extraction runs on Google Gemini 3.8 Flash when GEMINI_API_KEY is configured, with automated deterministic NLP fallback for guaranteed offline reliability."}
             </p>
           </div>
 

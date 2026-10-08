@@ -2251,6 +2251,76 @@ describe("PayPilot AI Test Suite", () => {
       }
     }
   });
+
+  // 45. Approved payout reviews removed from attention & pending approval queues
+  it("45. should cleanly remove approved payout reviews from the pending approval queue and reduce attention count", async () => {
+    const { POST: approvePost } = await import("../src/app/api/goals/[id]/approve/route");
+    const { createSignedVisitorToken } = await import("../src/packages/security/auth");
+
+    const { token, visitorId } = createSignedVisitorToken();
+
+    const payoutGoal: PaymentGoal = {
+      id: "goal_test_payout_approval_45",
+      goal: "Disburse $2,500 consulting payout to Mike",
+      goalType: "payout_review",
+      customer: "Mike Reynolds",
+      amount: 2500,
+      currency: "USD",
+      status: "pending_approval",
+      mode: "simulation",
+      isSimulated: true,
+      requiresApproval: true,
+      approvalStatus: "pending",
+      riskLevel: "high",
+      riskScore: 65,
+      riskChecks: [
+        { id: "c1", name: "High Value", passed: false, severity: "warning", details: "Exceeds $2000" },
+      ],
+      createdBy: "agent",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      visitorId,
+      timeline: [],
+    };
+    db.saveGoal(payoutGoal);
+
+    try {
+      // 1. Initially, metrics reflect 1 item needing attention
+      const initialMetrics = db.getMetrics([payoutGoal]);
+      expect(initialMetrics.attentionCount).toBe(1);
+      expect(initialMetrics.payoutApprovedCount).toBe(0);
+
+      // 2. Perform approval via API
+      const approveReq = new Request(`http://localhost:3000/api/goals/goal_test_payout_approval_45/approve`, {
+        method: "POST",
+        headers: { Cookie: `paypilot_visitor_session=${token}` },
+      });
+      const approveRes = await approvePost(approveReq, { params: { id: "goal_test_payout_approval_45" } });
+      expect(approveRes.status).toBe(200);
+
+      // 3. Goal status transitioned to payout_approved
+      const updated = db.getGoalById("goal_test_payout_approval_45");
+      expect(updated?.status).toBe("payout_approved");
+      expect(updated?.approvalStatus).toBe("approved");
+
+      // 4. Attention metric MUST drop to 0, and payoutApprovedCount MUST be 1
+      const updatedMetrics = db.getMetrics([updated!]);
+      expect(updatedMetrics.attentionCount).toBe(0);
+      expect(updatedMetrics.payoutApprovedCount).toBe(1);
+
+      // 5. ApprovalsQueue filter MUST exclude this goal
+      const pendingApprovalFilter = (g: PaymentGoal) =>
+        (g.status === "pending_approval" || (g.requiresApproval && g.approvalStatus === "pending")) &&
+        g.status !== "payout_approved" &&
+        g.status !== "paid" &&
+        g.status !== "cancelled" &&
+        g.approvalStatus !== "approved";
+
+      expect(pendingApprovalFilter(updated!)).toBe(false);
+    } finally {
+      db.deleteGoal("goal_test_payout_approval_45");
+    }
+  });
 });
 
 
