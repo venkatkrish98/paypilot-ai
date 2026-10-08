@@ -91,11 +91,16 @@ const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_PERIOD_MS = 15 * 60 * 1000; // 15 minutes lockout
 const LOCKOUT_FILE = path.join(process.cwd(), "data", "auth_lockout.json");
 
+function getLockoutFilePath(): string {
+  return process.env.PAYPILOT_LOCKOUT_FILE || LOCKOUT_FILE;
+}
+
 function syncFromSharedStore(): void {
-  if (process.env.PAYPILOT_DB_PATH === ":memory:") return;
+  if (process.env.PAYPILOT_DB_PATH === ":memory:" && !process.env.PAYPILOT_TEST_LOCKOUT_DISK) return;
+  const filePath = getLockoutFilePath();
   try {
-    if (fs.existsSync(LOCKOUT_FILE)) {
-      const data = JSON.parse(fs.readFileSync(LOCKOUT_FILE, "utf-8"));
+    if (fs.existsSync(filePath)) {
+      const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
       const now = Date.now();
       for (const [key, val] of Object.entries(data)) {
         const diskEntry = val as LockoutEntry;
@@ -117,22 +122,29 @@ function syncFromSharedStore(): void {
   } catch {}
 }
 
-function syncToSharedStore(): void {
-  if (process.env.PAYPILOT_DB_PATH === ":memory:") return;
+function syncToSharedStore(deletedKey?: string): void {
+  if (process.env.PAYPILOT_DB_PATH === ":memory:" && !process.env.PAYPILOT_TEST_LOCKOUT_DISK) return;
+  const filePath = getLockoutFilePath();
   try {
-    const dir = path.dirname(LOCKOUT_FILE);
+    const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
     // Read current disk snapshot first to merge any concurrent external changes
     let diskSnapshot: Record<string, LockoutEntry> = {};
-    if (fs.existsSync(LOCKOUT_FILE)) {
+    if (fs.existsSync(filePath)) {
       try {
-        diskSnapshot = JSON.parse(fs.readFileSync(LOCKOUT_FILE, "utf-8")) || {};
+        diskSnapshot = JSON.parse(fs.readFileSync(filePath, "utf-8")) || {};
       } catch {}
+    }
+
+    // Explicitly purge the cleared/deleted client entry from disk snapshot
+    if (deletedKey) {
+      delete diskSnapshot[deletedKey];
     }
 
     // Merge in-memory map into disk snapshot
     for (const [k, memEntry] of Array.from(authLockoutMap.entries())) {
+      if (deletedKey && k === deletedKey) continue;
       const existing = diskSnapshot[k];
       if (!existing) {
         diskSnapshot[k] = memEntry;
@@ -145,9 +157,9 @@ function syncToSharedStore(): void {
       }
     }
 
-    const tmp = `${LOCKOUT_FILE}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
+    const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
     fs.writeFileSync(tmp, JSON.stringify(diskSnapshot, null, 2), "utf-8");
-    fs.renameSync(tmp, LOCKOUT_FILE);
+    fs.renameSync(tmp, filePath);
   } catch {}
 }
 
@@ -204,7 +216,7 @@ export function recordFailedAuth(clientIdentifier: string): {
 
 export function clearFailedAuth(clientIdentifier: string): void {
   authLockoutMap.delete(clientIdentifier);
-  syncToSharedStore();
+  syncToSharedStore(clientIdentifier);
 }
 
 /**

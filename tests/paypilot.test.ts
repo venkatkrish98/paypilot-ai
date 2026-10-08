@@ -2200,6 +2200,57 @@ describe("PayPilot AI Test Suite", () => {
       db.deleteGoal("goal_orphaned_sim");
     }
   });
+
+  // 44. Lockout disk cleanup on successful authentication (no resurrection on sync)
+  it("44. should permanently purge lockout from both memory and disk on clearFailedAuth to prevent resurrection", async () => {
+    const { recordFailedAuth, clearFailedAuth, checkAuthLockout } = await import(
+      "../src/packages/security/auth"
+    );
+    const fs = await import("fs");
+    const path = await import("path");
+
+    const testLockoutFile = path.join(process.cwd(), "data", "test_lockout_verify.json");
+    process.env.PAYPILOT_LOCKOUT_FILE = testLockoutFile;
+    process.env.PAYPILOT_TEST_LOCKOUT_DISK = "true";
+
+    const testIp = "203.0.113.88";
+
+    try {
+      // 1. Record 3 failed attempts
+      recordFailedAuth(testIp);
+      recordFailedAuth(testIp);
+      const third = recordFailedAuth(testIp);
+      expect(third.remainingAttempts).toBe(2);
+
+      // Verify the disk file was created and contains the test IP
+      expect(fs.existsSync(testLockoutFile)).toBe(true);
+      const diskContentBefore = JSON.parse(fs.readFileSync(testLockoutFile, "utf-8"));
+      expect(diskContentBefore[testIp]).toBeDefined();
+      expect(diskContentBefore[testIp].failedAttempts).toBe(3);
+
+      // 2. Successful authentication calls clearFailedAuth
+      clearFailedAuth(testIp);
+
+      // Verify the disk file was updated and NO LONGER contains the test IP
+      const diskContentAfter = JSON.parse(fs.readFileSync(testLockoutFile, "utf-8"));
+      expect(diskContentAfter[testIp]).toBeUndefined();
+
+      // 3. Subsequent check triggers syncFromSharedStore() - must NOT resurrect old state
+      const checkResult = checkAuthLockout(testIp);
+      expect(checkResult.isLocked).toBe(false);
+
+      // 4. A new failed attempt must start from 1 (remaining: 4), NOT from previous count (which would be remaining: 1)
+      const freshAttempt = recordFailedAuth(testIp);
+      expect(freshAttempt.remainingAttempts).toBe(4);
+      expect(freshAttempt.isLocked).toBe(false);
+    } finally {
+      delete process.env.PAYPILOT_LOCKOUT_FILE;
+      delete process.env.PAYPILOT_TEST_LOCKOUT_DISK;
+      if (fs.existsSync(testLockoutFile)) {
+        fs.unlinkSync(testLockoutFile);
+      }
+    }
+  });
 });
 
 
