@@ -2080,6 +2080,124 @@ describe("PayPilot AI Test Suite", () => {
       db.deleteGoal("goal_vis_b_own");
     }
   });
+
+  // 43. Production unowned record protection & deployment-aware proxy IP security
+  it("43. should reject unowned/orphaned simulation records in production and strictly validate deployment-aware proxy IPs", async () => {
+    const { checkGoalMutationOwnership, checkRecommendationDismissalOwnership, getTrustedClientIp, isValidIpAddress } = await import(
+      "../src/packages/security/auth"
+    );
+    const { GET: getGoalById } = await import("../src/app/api/goals/[id]/route");
+
+    // 1. Create an orphaned / unowned simulation goal (no visitorId)
+    const orphanedGoal: PaymentGoal = {
+      id: "goal_orphaned_sim",
+      goal: "Legacy Orphaned Simulation Goal",
+      goalType: "collection",
+      customer: "Legacy Customer",
+      amount: 300,
+      currency: "USD",
+      status: "awaiting_payment",
+      mode: "simulation",
+      isSimulated: true,
+      riskLevel: "low",
+      riskScore: 5,
+      riskChecks: [],
+      createdBy: "agent",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      timeline: [],
+    };
+    db.saveGoal(orphanedGoal);
+
+    const origEnv = process.env.NODE_ENV;
+    const origPlatform = process.env.DEPLOYMENT_PLATFORM;
+    const origProxyHeader = process.env.PAYPILOT_TRUSTED_PROXY_HEADER;
+    const origSessionSecret = process.env.PAYPILOT_SESSION_SECRET;
+
+    try {
+      // In TEST environment: unit test fixture mutation is permitted
+      const testCheck = checkGoalMutationOwnership(orphanedGoal, false, undefined);
+      expect(testCheck.allowed).toBe(true);
+
+      // In PRODUCTION environment: anonymous mutations on unowned simulation goals are STRICTLY 403 Forbidden!
+      (process.env as Record<string, string>).NODE_ENV = "production";
+      process.env.PAYPILOT_SESSION_SECRET = "production_super_secret_test_key_32chars_long";
+
+      const prodCheck = checkGoalMutationOwnership(orphanedGoal, false, "vis_anon_999");
+      expect(prodCheck.allowed).toBe(false);
+      expect(prodCheck.statusCode).toBe(403);
+      expect(prodCheck.reason).toContain("Legacy or unowned simulation goals require administrative authentication");
+
+      // Anonymous recommendation dismissal on unowned recommendation in production is 403 Forbidden
+      const orphanedRec: AIRecommendation = {
+        id: "rec_orphaned_999",
+        type: "follow_up",
+        title: "Orphaned Rec",
+        description: "Orphaned Rec Desc",
+        urgency: "low",
+        reasoning: "Test",
+        actions: [],
+        createdAt: new Date().toISOString(),
+      };
+      const recProdCheck = checkRecommendationDismissalOwnership(orphanedRec, false, "vis_anon_999");
+      expect(recProdCheck.allowed).toBe(false);
+      expect(recProdCheck.statusCode).toBe(403);
+
+      // Anonymous GET /api/goals/goal_orphaned_sim in production returns 403 Forbidden
+      const anonReq = new Request("http://localhost:3000/api/goals/goal_orphaned_sim");
+      const anonRes = await getGoalById(anonReq, { params: { id: "goal_orphaned_sim" } });
+      expect(anonRes.status).toBe(403);
+
+      // 2. IP Validation tests
+      expect(isValidIpAddress("192.168.1.1")).toBe(true);
+      expect(isValidIpAddress("2001:0db8:85a3:0000:0000:8a2e:0370:7334")).toBe(true);
+      expect(isValidIpAddress("::1")).toBe(true);
+      expect(isValidIpAddress("invalid_string_injection\r\n")).toBe(false);
+      expect(isValidIpAddress("999.999.999.999")).toBe(false);
+
+      // 3. Deployment-aware IP extraction tests
+      // A. Explicit PAYPILOT_TRUSTED_PROXY_HEADER
+      process.env.PAYPILOT_TRUSTED_PROXY_HEADER = "x-custom-cdn-ip";
+      const reqCustom = new Request("http://localhost:3000/api/auth/session", {
+        headers: {
+          "x-custom-cdn-ip": "203.0.113.199",
+          "cf-connecting-ip": "1.1.1.1",
+        },
+      });
+      expect(getTrustedClientIp(reqCustom)).toBe("203.0.113.199");
+      delete process.env.PAYPILOT_TRUSTED_PROXY_HEADER;
+
+      // B. DEPLOYMENT_PLATFORM = direct (ignores spoofed proxy headers completely)
+      process.env.DEPLOYMENT_PLATFORM = "direct";
+      const reqDirect = new Request("http://localhost:3000/api/auth/session", {
+        headers: {
+          "cf-connecting-ip": "1.2.3.4",
+          "x-forwarded-for": "5.6.7.8",
+        },
+      });
+      expect(getTrustedClientIp(reqDirect)).toBe("127.0.0.1");
+      delete process.env.DEPLOYMENT_PLATFORM;
+
+      // C. DEPLOYMENT_PLATFORM = vercel
+      process.env.DEPLOYMENT_PLATFORM = "vercel";
+      const reqVercel = new Request("http://localhost:3000/api/auth/session", {
+        headers: {
+          "x-vercel-ip": "198.51.100.77",
+          "x-forwarded-for": "10.0.0.1",
+        },
+      });
+      expect(getTrustedClientIp(reqVercel)).toBe("198.51.100.77");
+    } finally {
+      (process.env as Record<string, string>).NODE_ENV = origEnv || "test";
+      if (origPlatform !== undefined) process.env.DEPLOYMENT_PLATFORM = origPlatform;
+      else delete process.env.DEPLOYMENT_PLATFORM;
+      if (origProxyHeader !== undefined) process.env.PAYPILOT_TRUSTED_PROXY_HEADER = origProxyHeader;
+      else delete process.env.PAYPILOT_TRUSTED_PROXY_HEADER;
+      if (origSessionSecret !== undefined) process.env.PAYPILOT_SESSION_SECRET = origSessionSecret;
+      else delete process.env.PAYPILOT_SESSION_SECRET;
+      db.deleteGoal("goal_orphaned_sim");
+    }
+  });
 });
 
 

@@ -49,8 +49,14 @@ export async function GET(
       }
 
       const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(goal.id);
+      const isTestEnv =
+        process.env.NODE_ENV !== "production" &&
+        (process.env.NODE_ENV === "test" || Boolean(process.env.VITEST)) &&
+        process.env.PAYPILOT_FORCE_PROD_AUTH !== "true";
       const isOwnVisitorGoal =
-        goal.isSimulated && (!goal.visitorId || (Boolean(readScope.visitorId) && goal.visitorId === readScope.visitorId));
+        goal.isSimulated &&
+        ((isTestEnv && !goal.visitorId) ||
+          (Boolean(readScope.visitorId) && goal.visitorId === readScope.visitorId));
 
       if (!isCanonical && !isOwnVisitorGoal) {
         return NextResponse.json(

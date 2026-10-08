@@ -45,6 +45,8 @@ body {
 }
 
 /* User-Friendly Typography Scale */
+/* Note: Root HTML font-size remains 16px to maintain browser accessibility baselines, 
+   while component text utilities are explicitly scaled up (+2px to +4px) for readability */
 .text-\[9px\] {
   font-size: 11px !important;
   line-height: 16px !important;
