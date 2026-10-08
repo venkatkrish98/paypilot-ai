@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { defaultOrchestrator } from "@/packages/agent";
-import { checkWriteAuthorization, isRequestAdmin } from "@/packages/security/auth";
+import { checkWriteAuthorization, getVisitorId, isRequestAdmin } from "@/packages/security/auth";
 import { defaultPayPalClient } from "@/packages/paypal";
 
 export async function POST(req: Request) {
   try {
     const isAdmin = isRequestAdmin(req);
     const isSimulationOnly = !isAdmin || !defaultPayPalClient.isConfigured();
+    const visitorId = isAdmin ? undefined : (getVisitorId(req) || undefined);
 
     const auth = checkWriteAuthorization(req, {
       isSimulated: isSimulationOnly,
@@ -25,6 +26,7 @@ export async function POST(req: Request) {
 
     const result = await defaultOrchestrator.execute(query, {
       isSimulationOnly,
+      visitorId,
     });
     return NextResponse.json(result);
   } catch (error) {

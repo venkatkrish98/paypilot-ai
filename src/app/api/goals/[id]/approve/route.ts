@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 import { defaultPayPalClient } from "@/packages/paypal";
 import { TimelineEvent } from "@/packages/types";
-import { checkWriteAuthorization } from "@/packages/security/auth";
+import {
+  checkWriteAuthorization,
+  getVisitorId,
+  isRequestAdmin,
+  scopeGoalsForRequester,
+} from "@/packages/security/auth";
 
 export async function POST(
   req: Request,
@@ -14,7 +19,10 @@ export async function POST(
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
     }
 
+    const isAdmin = isRequestAdmin(req);
+    const visitorId = getVisitorId(req);
     const willBeRealSandbox = !goal.isSimulated || goal.mode === "sandbox" || defaultPayPalClient.isConfigured();
+
     const auth = checkWriteAuthorization(req, {
       isSimulated: !willBeRealSandbox,
       action: "approve",
@@ -22,6 +30,8 @@ export async function POST(
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
     }
+
+    const forceSimulation = !willBeRealSandbox;
 
     // Idempotency: Reject invalid transitions
     if (goal.status === "awaiting_payment" || goal.status === "paid" || goal.status === "payout_approved" || goal.approvalStatus === "approved") {
@@ -69,10 +79,11 @@ export async function POST(
 
       db.saveGoal(goal);
 
+      const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
       return NextResponse.json({
         success: true,
         goal,
-        metrics: db.getMetrics(),
+        metrics: db.getMetrics(visibleGoals),
         message: `Vendor disbursement of $${goal.amount.toLocaleString()} for ${goal.customer} approved for review (Simulation Only — No Payout Dispatched). Vendor balance remains unchanged until execution.`,
         isSimulated: true,
       });
@@ -83,6 +94,7 @@ export async function POST(
       amount: goal.amount,
       currency: goal.currency,
       description: goal.purpose || goal.goal,
+      forceSimulation,
     });
     const checkoutUrl = defaultPayPalClient.getCheckoutUrl(paypalOrder);
 
@@ -114,10 +126,11 @@ export async function POST(
 
     db.saveGoal(goal);
 
+    const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
     return NextResponse.json({
       success: true,
       goal,
-      metrics: db.getMetrics(),
+      metrics: db.getMetrics(visibleGoals),
       message: `Collection goal of $${goal.amount.toLocaleString()} approved. ${
         isLiveSandbox ? "PayPal Sandbox" : "Simulated"
       } Order ${paypalOrder.id} ready.`,

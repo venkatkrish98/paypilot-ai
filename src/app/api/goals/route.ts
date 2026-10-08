@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
-import { checkReadAuthorization, checkWriteAuthorization, isRequestAdmin } from "@/packages/security/auth";
+import {
+  checkReadAuthorization,
+  checkWriteAuthorization,
+  isRequestAdmin,
+  getVisitorId,
+  scopeGoalsForRequester,
+} from "@/packages/security/auth";
 import { defaultPayPalClient } from "@/packages/paypal";
 import { defaultSafetyEngine } from "@/packages/risk";
 import { parseRelativeDate } from "@/packages/agent/ai-planner";
@@ -16,12 +22,9 @@ export async function GET(req: Request) {
       );
     }
 
-    let goals = db.getGoals();
-    if (readScope.scope === "demo_only") {
-      // In demo mode for unauthenticated callers, scope to simulation goals & demo fixtures
-      goals = goals.filter((g) => g.isSimulated || g.isDemoFixture);
-    }
-    const metrics = db.getMetrics();
+    const allGoals = db.getGoals();
+    const goals = scopeGoalsForRequester(allGoals, readScope.isAdmin, readScope.visitorId);
+    const metrics = db.getMetrics(goals);
     return NextResponse.json({ goals, metrics });
   } catch (error) {
     return NextResponse.json(
@@ -88,6 +91,7 @@ export async function POST(req: Request) {
         notes: "Created via payment goal dispatch.",
         paymentHistory: [],
         isDemoFixture: false,
+        visitorId: isAdmin ? undefined : (getVisitorId(req) || undefined),
       };
       db.saveCustomer(customer);
     }
@@ -173,10 +177,12 @@ export async function POST(req: Request) {
       updatedAt: new Date().toISOString(),
       timeline,
       isDemoFixture: false,
+      visitorId: isAdmin ? undefined : (getVisitorId(req) || undefined),
     };
 
     db.saveGoal(newGoal);
-    return NextResponse.json({ goal: newGoal, metrics: db.getMetrics() }, { status: 201 });
+    const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, getVisitorId(req));
+    return NextResponse.json({ goal: newGoal, metrics: db.getMetrics(visibleGoals) }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error creating goal" },

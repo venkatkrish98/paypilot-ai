@@ -21,7 +21,7 @@ export class AgentOrchestrator {
    */
   public async execute(
     userQuery: string,
-    options?: { isSimulationOnly?: boolean }
+    options?: { isSimulationOnly?: boolean; visitorId?: string }
   ): Promise<AgentOrchestratorResult> {
     const steps: AgentStep[] = [];
     const now = new Date();
@@ -63,7 +63,7 @@ export class AgentOrchestrator {
 
     // Case D: Memory Store
     if (plannedIntent.action === "memory_store") {
-      return this.handleMemoryStore(userQuery, steps, plannedIntent.aiEngine);
+      return this.handleMemoryStore(userQuery, steps, plannedIntent.aiEngine, options?.visitorId);
     }
 
     // Case E: Payment Collection or Disbursement Review Workflow
@@ -71,7 +71,7 @@ export class AgentOrchestrator {
       plannedIntent.action === "create_collection_goal" ||
       plannedIntent.action === "create_payout_review"
     ) {
-      return this.handlePaymentWorkflow(plannedIntent, steps, userQuery, options?.isSimulationOnly);
+      return this.handlePaymentWorkflow(plannedIntent, steps, userQuery, options);
     }
 
     // Fallback: Default intelligent guidance
@@ -104,7 +104,7 @@ export class AgentOrchestrator {
     intent: AIPlanningOutput,
     steps: AgentStep[],
     userQuery: string,
-    isSimulationOnly?: boolean
+    options?: { isSimulationOnly?: boolean; visitorId?: string }
   ): Promise<AgentOrchestratorResult> {
     const timeNow = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const amount = intent.amount || 1200;
@@ -114,6 +114,9 @@ export class AgentOrchestrator {
     const deadline = intent.deadline || new Date().toISOString().split("T")[0];
     const isPayout = intent.action === "create_payout_review";
     const goalType: GoalType = isPayout ? "payout_review" : "collection";
+
+    const isSimulationOnly = options?.isSimulationOnly;
+    const visitorId = options?.visitorId;
 
     const isLiveSandbox = !isSimulationOnly && defaultPayPalClient.isConfigured();
     const mode = isLiveSandbox ? "sandbox" : "simulation";
@@ -137,6 +140,7 @@ export class AgentOrchestrator {
         riskIndicators: ["New recipient"],
         isNewRecipient: true,
         notes: "Created by PayPilot AI agent upon natural language instruction.",
+        visitorId,
       };
       db.saveCustomer(customer);
       steps[steps.length - 1].summary = `Identified new recipient: "${customer.name}" (${customer.email})`;
@@ -197,6 +201,7 @@ export class AgentOrchestrator {
         createdBy: "agent",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        visitorId,
         timeline: [
           {
             id: `t_${Date.now()}_1`,
@@ -371,6 +376,7 @@ export class AgentOrchestrator {
       createdBy: "agent",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      visitorId,
       timeline: goalTimeline,
     };
 
@@ -585,7 +591,8 @@ export class AgentOrchestrator {
   private handleMemoryStore(
     userQuery: string,
     steps: AgentStep[],
-    aiEngine: "gemini" | "deterministic"
+    aiEngine: "gemini" | "deterministic",
+    visitorId?: string
   ): AgentOrchestratorResult {
     const timeNow = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -597,7 +604,7 @@ export class AgentOrchestrator {
     });
 
     const clean = userQuery.replace(/^(?:remember\s+(?:that\s+)?)/i, "").trim();
-    const mem = db.addMemory("user_rule", clean, "preference");
+    const mem = db.addMemory("user_rule", clean, "preference", visitorId);
 
     steps[steps.length - 1].status = "completed";
     steps[steps.length - 1].summary = `Persisted preference [${mem.id}] to PayPilot Memory`;

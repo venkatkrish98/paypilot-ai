@@ -2,7 +2,14 @@ import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 import { GoalStatus } from "@/packages/types";
 
-import { checkReadAuthorization, checkWriteAuthorization } from "@/packages/security/auth";
+import { CANONICAL_DEMO_GOAL_IDS } from "@/packages/database";
+import {
+  checkReadAuthorization,
+  checkWriteAuthorization,
+  getVisitorId,
+  isRequestAdmin,
+  scopeGoalsForRequester,
+} from "@/packages/security/auth";
 
 export async function GET(
   req: Request,
@@ -25,11 +32,18 @@ export async function GET(
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
     }
 
-    if (readScope.scope === "demo_only" && !goal.isSimulated && !goal.isDemoFixture) {
-      return NextResponse.json(
-        { error: "Access restricted: Real PayPal transactions require administrative authentication." },
-        { status: 403 }
-      );
+    // Admin can see everything
+    if (!readScope.isAdmin) {
+      const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(goal.id);
+      const isOwnVisitorGoal =
+        Boolean(readScope.visitorId && goal.visitorId === readScope.visitorId && goal.isSimulated);
+
+      if (!isCanonical && !isOwnVisitorGoal) {
+        return NextResponse.json(
+          { error: "Access restricted: Real PayPal transactions or other visitor data require administrative authentication." },
+          { status: 403 }
+        );
+      }
     }
 
     return NextResponse.json({ goal });
@@ -55,12 +69,26 @@ export async function PATCH(
       return NextResponse.json({ error: "Goal not found" }, { status: 404 });
     }
 
+    const isAdmin = isRequestAdmin(req);
+    const visitorId = getVisitorId(req);
+
     const auth = checkWriteAuthorization(req, {
       isSimulated: existing.isSimulated,
       action: "update",
     });
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
+    }
+
+    if (!isAdmin) {
+      const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(existing.id);
+      const isOwnGoal = Boolean(visitorId && existing.visitorId === visitorId && existing.isSimulated);
+      if (!isCanonical && !isOwnGoal) {
+        return NextResponse.json(
+          { error: "Access restricted: You cannot modify goals belonging to other sessions." },
+          { status: 403 }
+        );
+      }
     }
 
     const body = await req.json();
@@ -134,7 +162,8 @@ export async function PATCH(
     existing.updatedAt = new Date().toISOString();
     db.saveGoal(existing);
 
-    return NextResponse.json({ goal: existing, metrics: db.getMetrics() });
+    const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
+    return NextResponse.json({ goal: existing, metrics: db.getMetrics(visibleGoals) });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error updating goal" },

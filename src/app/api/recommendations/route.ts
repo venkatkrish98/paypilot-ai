@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 
-import { checkReadAuthorization, checkWriteAuthorization } from "@/packages/security/auth";
+import {
+  checkReadAuthorization,
+  checkWriteAuthorization,
+  getVisitorId,
+  isRequestAdmin,
+  scopeRecommendationsForRequester,
+} from "@/packages/security/auth";
 
 export async function GET(req: Request) {
   try {
@@ -13,11 +19,11 @@ export async function GET(req: Request) {
       );
     }
 
-    let recommendations = db.getRecommendations();
-    if (readScope.scope === "demo_only") {
-      const canonicalIds = new Set(["rec_1", "rec_2"]);
-      recommendations = recommendations.filter((r) => canonicalIds.has(r.id));
-    }
+    const recommendations = scopeRecommendationsForRequester(
+      db.getRecommendations(),
+      readScope.isAdmin,
+      readScope.visitorId
+    );
     return NextResponse.json({ recommendations });
   } catch (error) {
     return NextResponse.json(
@@ -29,6 +35,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const isAdmin = isRequestAdmin(req);
     const auth = checkWriteAuthorization(req, {
       isSimulated: true,
       action: "update",
@@ -41,9 +48,14 @@ export async function POST(req: Request) {
     if (action === "dismiss" && id) {
       db.dismissRecommendation(id);
     }
+    const visibleRecs = scopeRecommendationsForRequester(
+      db.getRecommendations(),
+      isAdmin,
+      getVisitorId(req)
+    );
     return NextResponse.json({
       success: true,
-      recommendations: db.getRecommendations(),
+      recommendations: visibleRecs,
     });
   } catch (error) {
     return NextResponse.json(

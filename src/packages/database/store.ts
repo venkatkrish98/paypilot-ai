@@ -9,6 +9,31 @@ import { Customer, PaymentGoal, MemoryItem, AIRecommendation, TimelineEvent, Das
 
 import { getNextDayOfWeek } from "../agent/ai-planner";
 
+export const CANONICAL_DEMO_GOAL_IDS = new Set([
+  "goal_sarah_1200",
+  "goal_john_850",
+  "goal_mike_2500",
+  "goal_acme_600",
+]);
+
+export const CANONICAL_DEMO_CUSTOMER_IDS = new Set([
+  "cust_sarah",
+  "cust_john",
+  "cust_mike",
+  "cust_acme",
+]);
+
+export const CANONICAL_DEMO_MEMORY_IDS = new Set([
+  "mem_1",
+  "mem_2",
+  "mem_3",
+]);
+
+export const CANONICAL_DEMO_RECOMMENDATION_IDS = new Set([
+  "rec_1",
+  "rec_2",
+]);
+
 export interface DatabaseSnapshot {
   version: number;
   lastUpdated: string;
@@ -769,7 +794,7 @@ export class DatabaseStore {
     return memory;
   }
 
-  public addMemory(key: string, value: string, category: MemoryItem["category"] = "preference"): MemoryItem {
+  public addMemory(key: string, value: string, category: MemoryItem["category"] = "preference", visitorId?: string): MemoryItem {
     const id = `mem_${Date.now()}`;
     const mem: MemoryItem = {
       id,
@@ -777,6 +802,7 @@ export class DatabaseStore {
       value,
       category,
       createdAt: new Date().toISOString(),
+      visitorId,
     };
     this.memories.set(id, mem);
     this.persistToDisk();
@@ -804,8 +830,8 @@ export class DatabaseStore {
   }
 
   // KPI Metrics
-  public getMetrics(): DashboardMetrics {
-    const all = this.getGoals();
+  public getMetrics(goals?: PaymentGoal[]): DashboardMetrics {
+    const all = goals || this.getGoals();
     const awaiting = all.filter(
       (g) => (g.status === "awaiting_payment" || g.status === "payment_created") && g.goalType === "collection"
     );

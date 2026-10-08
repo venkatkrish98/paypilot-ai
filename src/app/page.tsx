@@ -14,8 +14,9 @@ import { MemoryView } from "@/components/MemoryView";
 import { ActivityView } from "@/components/ActivityView";
 import { SettingsView } from "@/components/SettingsView";
 import { AIRecommendationsCard } from "@/components/AIRecommendationsCard";
+import { AdminAuthModal } from "@/components/AdminAuthModal";
 import { PaymentGoal, AIRecommendation, ExecutionMode, DashboardMetrics } from "@/packages/types";
-import { Bot, Menu, Sparkles, Sun, Moon, AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
+import { Bot, Menu, Sparkles, Sun, Moon, AlertTriangle, CheckCircle2, RotateCcw, Shield, LogOut } from "lucide-react";
 
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>("dashboard");
@@ -28,6 +29,9 @@ export default function Home() {
   const [isOpenMobile, setIsOpenMobile] = useState<boolean>(false);
   const [isDark, setIsDark] = useState<boolean>(true);
   const [mode, setMode] = useState<ExecutionMode>("simulation");
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+  const [canExecuteSandbox, setCanExecuteSandbox] = useState<boolean>(false);
   const [globalNotice, setGlobalNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
@@ -54,17 +58,45 @@ export default function Home() {
       document.documentElement.classList.remove("dark");
     }
 
-    // Initialize session token for same-origin authentication
-    fetch("/api/auth/session").catch(() => {});
+    // Establish visitor isolation identity
+    let visitorId = localStorage.getItem("paypilot_visitor_id");
+    if (!visitorId) {
+      visitorId = `v_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      localStorage.setItem("paypilot_visitor_id", visitorId);
+    }
+    document.cookie = `paypilot_visitor_id=${visitorId}; path=/; max-age=31536000; SameSite=Lax`;
 
-    // Fetch system configuration safely
-    fetch("/api/config")
-      .then((r) => r.json())
-      .then((cfg) => {
-        if (cfg.mode) setMode(cfg.mode);
-      })
-      .catch((e) => console.error("Error fetching config:", e));
+    refreshAuthAndConfig();
   }, []);
+
+  const refreshAuthAndConfig = async () => {
+    try {
+      const [sessionRes, configRes] = await Promise.all([
+        fetch("/api/auth/session"),
+        fetch("/api/config"),
+      ]);
+      const sessionData = await sessionRes.json();
+      const configData = await configRes.json();
+      setIsAdmin(Boolean(sessionData.authenticated));
+      setMode(configData.mode || "simulation");
+      setCanExecuteSandbox(Boolean(configData.canExecuteSandbox));
+    } catch (e) {
+      console.error("Config check error:", e);
+    }
+  };
+
+  const handleSignOutAdmin = async () => {
+    try {
+      await fetch("/api/auth/session", { method: "DELETE" });
+      setIsAdmin(false);
+      setGlobalNotice({ type: "success", message: "Signed out to anonymous simulation demo." });
+      setTimeout(() => setGlobalNotice(null), 3000);
+      await refreshAuthAndConfig();
+      await fetchData();
+    } catch (e) {
+      console.error("Logout error:", e);
+    }
+  };
 
   const handleToggleTheme = () => {
     const nextDark = !isDark;
@@ -284,7 +316,7 @@ export default function Home() {
                   mode === "sandbox" ? "text-emerald-600 dark:text-emerald-400" : "text-purple-600 dark:text-purple-400"
                 }`}
               >
-                {mode === "sandbox" ? "PayPal Sandbox (Live)" : "PayPal Simulation Mode"}
+                {mode === "sandbox" ? "PayPal Sandbox (Live Admin)" : "Simulation Mode (Demo)"}
               </span>
             </div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight mt-0.5">
@@ -296,6 +328,26 @@ export default function Home() {
           </div>
 
           <div className="flex items-center space-x-2">
+            {isAdmin ? (
+              <button
+                onClick={handleSignOutAdmin}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium text-xs transition active:scale-95"
+                title="Sign out of Admin session back to anonymous demo"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out to Demo</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsAdminModalOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-paypal-blue/30 dark:border-sky-500/30 bg-paypal-blue/10 dark:bg-sky-500/10 text-paypal-blue dark:text-sky-300 hover:bg-paypal-blue/20 dark:hover:bg-sky-500/20 font-medium text-xs transition active:scale-95"
+                title="Enter Judge/Admin Key to unlock PayPal Sandbox mode"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Unlock Sandbox</span>
+              </button>
+            )}
+
             {currentTab !== "agent" && (
               <button
                 onClick={() => setCurrentTab("agent")}
@@ -472,6 +524,21 @@ export default function Home() {
             await handleSimulatePayment(goalId);
             setIsSimModalOpen(false);
             setSimulationGoal(null);
+          }}
+        />
+
+        {/* Admin Authentication Modal for Sandbox Execution */}
+        <AdminAuthModal
+          isOpen={isAdminModalOpen}
+          onClose={() => setIsAdminModalOpen(false)}
+          onSuccess={() => {
+            setGlobalNotice({
+              type: "success",
+              message: "Admin verified! PayPal Sandbox mode unlocked for this session.",
+            });
+            setTimeout(() => setGlobalNotice(null), 3500);
+            refreshAuthAndConfig();
+            fetchData();
           }}
         />
       </main>

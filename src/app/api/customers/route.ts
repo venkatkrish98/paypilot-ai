@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
-import { checkReadAuthorization, checkWriteAuthorization } from "@/packages/security/auth";
+import {
+  checkReadAuthorization,
+  checkWriteAuthorization,
+  getVisitorId,
+  isRequestAdmin,
+  scopeCustomersForRequester,
+} from "@/packages/security/auth";
 
 export async function GET(req: Request) {
   try {
@@ -12,10 +18,7 @@ export async function GET(req: Request) {
       );
     }
 
-    let customers = db.getCustomers();
-    if (readScope.scope === "demo_only") {
-      customers = customers.filter((c) => c.isDemoFixture);
-    }
+    const customers = scopeCustomersForRequester(db.getCustomers(), readScope.isAdmin, readScope.visitorId);
     return NextResponse.json({ customers });
   } catch (error) {
     return NextResponse.json(
@@ -27,6 +30,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const isAdmin = isRequestAdmin(req);
     const auth = checkWriteAuthorization(req, {
       isSimulated: true,
       action: "create",
@@ -50,6 +54,7 @@ export async function POST(req: Request) {
       notes: (body.notes || "").slice(0, 500),
       paymentHistory: Array.isArray(body.paymentHistory) ? body.paymentHistory : [],
       isDemoFixture: false,
+      visitorId: isAdmin ? undefined : (getVisitorId(req) || undefined),
     });
     return NextResponse.json({ customer });
   } catch (error) {

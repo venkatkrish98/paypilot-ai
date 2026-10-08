@@ -133,15 +133,20 @@ User Intent ("Collect $1,200 from Sarah by Friday")
 
 ---
 
-## 7. Submission Checklist & Evidence Needed
+## 7. Submission Checklist & Independently Verifiable Evidence
 
-- [x] **PayPal Orders v2 Integration & Architecture:** Direct REST integration with `/v1/oauth2/token`, `/v2/checkout/orders`, and capture with amount/currency/status validation.
-- [ ] **Live PayPal Sandbox Credentials Verification:** Integration code verified; requires judge/owner-supplied Sandbox client credentials in `.env` for external PayPal checkout execution.
-- [x] **Truthful Simulation Path:** Clearly distinguished simulation mode with in-app simulation checkout preview and strict route isolation.
-- [x] **Multi-Agent Orchestration & Planning:** 7-agent capability pipeline with structured intent extraction and 5-point Payment Safety heuristic engine.
-- [ ] **Live Google Gemini 2.5 Flash API Key Verification:** Full SDK integration with `@google/genai`; verified deterministic fallback engine active until live API key is configured.
-- [x] **33/33 Automated Regression Tests Passing:** Verified with Vitest (100% green coverage across security, authoritative sandbox provenance, idempotency, ledger, read scoping, and sandbox isolation).
+- [x] **PayPal Orders v2 Integration & Architecture:** Direct REST integration with `/v1/oauth2/token`, `/v2/checkout/orders`, and capture with amount/currency/status validation and buyer approval enforcement.
+- [x] **In-UI Judge Sandbox Authentication & Safe Execution:** Built-in "Unlock Sandbox" modal in the top header. Evaluators can enter the dev/judge key (`paypal_sandbox_judge_2026` or configured `PAYPILOT_ADMIN_KEY`). The server issues an encrypted `httpOnly` cookie (`paypilot_admin_session`) without exposing secrets to client code. With PayPal credentials configured, authorized UI users can create real PayPal Orders v2 orders, complete buyer approval on PayPal Sandbox, and capture them.
+- [x] **Truthful Mode Reporting (`/api/config`):** `/api/config` reports the effective mode available to the current UI session (`mode: "sandbox"` only if PayPal credentials are configured AND current session is admin-authenticated; otherwise strictly `"simulation"`).
+- [x] **Cross-Visitor Data Isolation & Canonical Fixtures:** Anonymous public demo requests are tagged with an isolated `visitorId`. Visitors only see canonical fixtures (`CANONICAL_DEMO_GOAL_IDS`, `CANONICAL_DEMO_CUSTOMER_IDS`, `CANONICAL_DEMO_MEMORY_IDS`, `CANONICAL_DEMO_RECOMMENDATION_IDS`) and their own session records. Dashboard metrics are computed strictly over visible scoped goals.
+- [x] **Google Gemini 2.5 Flash Engine Configured:** Verified SDK integration with `@google/genai` (`GEMINI_API_KEY` configured in `.env`), with automatic verified deterministic fallback.
+- [x] **37/37 Automated Regression Tests Passing:** Verified with Vitest (100% green coverage across security, authoritative sandbox provenance, cross-visitor data isolation, UI mode truthfulness, session login/logout, idempotency, ledger, and scoping).
 - [x] **Clean Next.js 14 Build & ESLint:** Zero build errors or linter warnings (`npm run build` and `npm run lint`).
-- [x] **Open-Source Repository:** Public GitHub repository (`https://github.com/venkatkrish98/paypilot-ai`) with open MIT license.
-- [ ] **Hosted Live Production Deployment:** Code production-ready; live public URL (Vercel / Cloud Run) to be configured by project owner.
-- [ ] **Demo Video Recording:** 2:30 video walkthrough following the exact script in Section 6 to be recorded by project owner.
+- [x] **Open-Source Repository:** Public GitHub repository ([venkatkrish98/paypilot-ai](https://github.com/venkatkrish98/paypilot-ai)) with open MIT license.
+- [ ] **Official Demo Video Requirements (Devpost Rules):**
+  > [!IMPORTANT]
+  > Per [Official Hackathon Rules](https://paypalaihackathon.devpost.com/rules):
+  > 1. The demo video must be **under 3 minutes** (the recommended script in Section 6 is 2 minutes 30 seconds).
+  > 2. The video must be hosted on YouTube with **public visibility** (Devpost rules require public visibility; do NOT mark it as unlisted or private).
+- [ ] **Hosted Live Production Deployment:** Ready for deployment to Vercel or Google Cloud Run.
+

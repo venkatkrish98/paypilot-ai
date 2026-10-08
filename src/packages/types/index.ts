@@ -98,6 +98,7 @@ export interface PaymentGoal {
   timeline: TimelineEvent[];
   notes?: string;
   isDemoFixture?: boolean;
+  visitorId?: string;
 }
 
 export interface CustomerPaymentRecord {
@@ -127,6 +128,7 @@ export interface Customer {
     customNote?: string;
   };
   isDemoFixture?: boolean;
+  visitorId?: string;
 }
 
 export type AgentCapability =
@@ -152,6 +154,7 @@ export interface MemoryItem {
   value: string;
   category: "preference" | "threshold" | "rule" | "contact";
   createdAt: string;
+  visitorId?: string;
 }
 
 export interface AIRecommendation {
@@ -163,6 +166,7 @@ export interface AIRecommendation {
   goalId?: string;
   urgency: "low" | "medium" | "high";
   createdAt: string;
+  visitorId?: string;
 }
 
 export interface PayPalOrderResponse {
@@ -234,4 +238,6 @@ export interface SafeSystemConfig {
   writesProtected: boolean;
   protectionPolicy: "admin_key_enforced" | "simulation_only_demo" | "disabled_fail_closed" | "development_permissive";
   demoMode: boolean;
+  adminAuthenticated: boolean;
+  canExecuteSandbox: boolean;
 }

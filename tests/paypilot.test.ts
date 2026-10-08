@@ -1375,5 +1375,189 @@ describe("PayPilot AI Test Suite", () => {
       else delete process.env.PAYPILOT_ADMIN_KEY;
     }
   });
+
+  // 34. Cross-visitor data isolation: Visitor 1's simulation data is never visible to Visitor 2
+  it("34. should isolate visitor data: Visitor A's goals, customers, and memories are never visible to Visitor B", async () => {
+    const { GET: getGoals, POST: postGoal } = await import("../src/app/api/goals/route");
+    const { GET: getCustomers, POST: postCustomer } = await import("../src/app/api/customers/route");
+    const { GET: getMemories, POST: postMemory } = await import("../src/app/api/memory/route");
+
+    const visitorA = "visitor_aaa_111";
+    const visitorB = "visitor_bbb_222";
+
+    // Visitor A creates a simulation goal
+    const goalReq = new Request("http://localhost:3000/api/goals", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-paypilot-visitor-id": visitorA,
+      },
+      body: JSON.stringify({
+        goal: "Collect $450 from Private Client A for design",
+        customer: "Private Client A",
+        amount: 450,
+      }),
+    });
+    const goalRes = await postGoal(goalReq);
+    expect(goalRes.status).toBe(201);
+    const goalData = await goalRes.json();
+    expect(goalData.goal.visitorId).toBe(visitorA);
+
+    // Visitor A creates a customer
+    const custReq = new Request("http://localhost:3000/api/customers", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-paypilot-visitor-id": visitorA,
+      },
+      body: JSON.stringify({
+        name: "Confidential Client Alpha",
+      }),
+    });
+    const custRes = await postCustomer(custReq);
+    expect(custRes.status).toBe(200);
+
+    // Visitor A adds a memory
+    const memReq = new Request("http://localhost:3000/api/memory", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-paypilot-visitor-id": visitorA,
+      },
+      body: JSON.stringify({
+        key: "private_rule_a",
+        value: "Secret preference for Visitor A only",
+      }),
+    });
+    const memRes = await postMemory(memReq);
+    expect(memRes.status).toBe(200);
+
+    // Now Visitor B fetches goals
+    const bGoalReq = new Request("http://localhost:3000/api/goals", {
+      headers: { "x-paypilot-visitor-id": visitorB },
+    });
+    const bGoalRes = await getGoals(bGoalReq);
+    const bGoalData = await bGoalRes.json();
+    const bGoalIds = bGoalData.goals.map((g: any) => g.id);
+    expect(bGoalIds).not.toContain(goalData.goal.id);
+    expect(bGoalData.goals.every((g: any) => g.visitorId !== visitorA)).toBe(true);
+
+    // Verify Visitor B's metrics do not include Visitor A's goal
+    expect(bGoalData.metrics.totalGoals).toBe(4);
+    expect(goalData.metrics.totalGoals).toBe(5);
+
+    // Visitor B fetches customers
+    const bCustReq = new Request("http://localhost:3000/api/customers", {
+      headers: { "x-paypilot-visitor-id": visitorB },
+    });
+    const bCustRes = await getCustomers(bCustReq);
+    const bCustData = await bCustRes.json();
+    expect(bCustData.customers.some((c: any) => c.name === "Confidential Client Alpha")).toBe(false);
+
+    // Visitor B fetches memories
+    const bMemReq = new Request("http://localhost:3000/api/memory", {
+      headers: { "x-paypilot-visitor-id": visitorB },
+    });
+    const bMemRes = await getMemories(bMemReq);
+    const bMemData = await bMemRes.json();
+    expect(bMemData.memories.some((m: any) => m.value.includes("Secret preference for Visitor A"))).toBe(false);
+  });
+
+  // 35. UI-visible mode truthfulness in /api/config
+  it("35. should report simulation mode to anonymous UI requests even when PayPal credentials exist on server", async () => {
+    vi.spyOn(defaultPayPalClient, "isConfigured").mockReturnValue(true);
+
+    const { GET: getConfig } = await import("../src/app/api/config/route");
+
+    // Anonymous request
+    const anonReq = new Request("http://localhost:3000/api/config");
+    const anonRes = await getConfig(anonReq);
+    expect(anonRes.status).toBe(200);
+    const anonData = await anonRes.json();
+    expect(anonData.mode).toBe("simulation");
+    expect(anonData.adminAuthenticated).toBe(false);
+    expect(anonData.canExecuteSandbox).toBe(false);
+
+    // Admin request with Bearer key
+    const adminReq = new Request("http://localhost:3000/api/config", {
+      headers: { Authorization: "Bearer paypal_sandbox_judge_2026" },
+    });
+    const adminRes = await getConfig(adminReq);
+    expect(adminRes.status).toBe(200);
+    const adminData = await adminRes.json();
+    expect(adminData.mode).toBe("sandbox");
+    expect(adminData.adminAuthenticated).toBe(true);
+    expect(adminData.canExecuteSandbox).toBe(true);
+
+    vi.restoreAllMocks();
+  });
+
+  // 36. UI Admin Auth session login, cookie setting, and logout
+  it("36. should handle UI admin session authentication and logout securely via httpOnly cookie", async () => {
+    const { POST: postSession, GET: getSession, DELETE: deleteSession } = await import(
+      "../src/app/api/auth/session/route"
+    );
+
+    // 1. Invalid key fails
+    const badLoginReq = new Request("http://localhost:3000/api/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adminKey: "wrong_password" }),
+    });
+    const badLoginRes = await postSession(badLoginReq);
+    expect(badLoginRes.status).toBe(401);
+
+    // 2. Valid key succeeds and sets cookie
+    const goodLoginReq = new Request("http://localhost:3000/api/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adminKey: "paypal_sandbox_judge_2026" }),
+    });
+    const goodLoginRes = await postSession(goodLoginReq);
+    expect(goodLoginRes.status).toBe(200);
+    const cookieHeader = goodLoginRes.headers.get("set-cookie");
+    expect(cookieHeader).toBeDefined();
+    expect(cookieHeader).toContain("paypilot_admin_session=");
+    expect(cookieHeader).toContain("HttpOnly");
+
+    // Extract cookie value for subsequent test request
+    const cookieMatch = cookieHeader?.match(/paypilot_admin_session=([^;]+)/);
+    const token = cookieMatch ? cookieMatch[1] : "";
+    expect(token.length).toBeGreaterThan(10);
+
+    // 3. GET /api/auth/session with session cookie returns authenticated: true
+    const checkReq = new Request("http://localhost:3000/api/auth/session", {
+      headers: { Cookie: `paypilot_admin_session=${token}` },
+    });
+    const checkRes = await getSession(checkReq);
+    const checkData = await checkRes.json();
+    expect(checkData.authenticated).toBe(true);
+    expect(checkData.role).toBe("admin");
+
+    // 4. Logout clears session cookie
+    const logoutRes = await deleteSession(checkReq);
+    expect(logoutRes.status).toBe(200);
+    const logoutCookie = logoutRes.headers.get("set-cookie");
+    expect(logoutCookie).toContain("Max-Age=0");
+  });
+
+  // 37. Strict canonical fixture scoping
+  it("37. should enforce strict canonical fixture IDs and compute metrics only over scoped goals", async () => {
+    const { GET: getGoals } = await import("../src/app/api/goals/route");
+    const { CANONICAL_DEMO_GOAL_IDS } = await import("../src/packages/database");
+
+    const req = new Request("http://localhost:3000/api/goals");
+    const res = await getGoals(req);
+    const data = await res.json();
+
+    // All returned goals for anonymous demo must belong to CANONICAL_DEMO_GOAL_IDS
+    for (const goal of data.goals) {
+      expect(CANONICAL_DEMO_GOAL_IDS.has(goal.id)).toBe(true);
+    }
+
+    // Metrics match exactly the sum and counts of the canonical goals
+    expect(data.metrics.totalGoals).toBe(CANONICAL_DEMO_GOAL_IDS.size);
+  });
 });
+
 

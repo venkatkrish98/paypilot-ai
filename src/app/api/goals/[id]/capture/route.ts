@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/packages/database";
 import { defaultPayPalClient } from "@/packages/paypal";
 import { TimelineEvent } from "@/packages/types";
-import { checkWriteAuthorization, validateOrderProvenance } from "@/packages/security/auth";
+import {
+  checkWriteAuthorization,
+  getVisitorId,
+  isRequestAdmin,
+  scopeGoalsForRequester,
+  validateOrderProvenance,
+} from "@/packages/security/auth";
 
 export async function POST(
   req: Request,
@@ -177,10 +183,14 @@ export async function POST(
       ? `${goal.customer}'s payment of $${goal.amount.toLocaleString()} has been ${isLiveSandbox ? "confirmed via PayPal Sandbox" : "recorded in Simulation Mode"}! The payment goal is complete.\n\nNext action: ${pendingApprovalGoal.customer}'s $${pendingApprovalGoal.amount.toLocaleString()} disbursement review requires your approval.`
       : `${goal.customer}'s payment of $${goal.amount.toLocaleString()} has been reconciled! All payment goals are up to date.`;
 
+    const isAdmin = isRequestAdmin(req);
+    const visitorId = getVisitorId(req);
+    const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
+
     return NextResponse.json({
       success: true,
       goal,
-      metrics: db.getMetrics(),
+      metrics: db.getMetrics(visibleGoals),
       agentMessage: nextActionSuggestion,
       recommendedGoalId: pendingApprovalGoal?.id,
       isSimulated: !isLiveSandbox,

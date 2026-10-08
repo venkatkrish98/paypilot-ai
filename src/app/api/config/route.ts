@@ -3,8 +3,13 @@ import { defaultPayPalClient } from "@/packages/paypal";
 import { defaultAIPlanner } from "@/packages/agent/ai-planner";
 import { SafeSystemConfig } from "@/packages/types";
 
-export async function GET() {
+import { isRequestAdmin } from "@/packages/security/auth";
+
+export async function GET(req: Request) {
   const isConfigured = defaultPayPalClient.isConfigured();
+  const isAdmin = isRequestAdmin(req);
+  const effectiveMode = (isConfigured && isAdmin) ? "sandbox" : "simulation";
+
   const envThreshold = process.env.PAYPILOT_REVIEW_THRESHOLD
     ? parseFloat(process.env.PAYPILOT_REVIEW_THRESHOLD)
     : 2000;
@@ -29,7 +34,7 @@ export async function GET() {
   const config: SafeSystemConfig = {
     paypalConfigured: isConfigured,
     paypalEnvironment: "sandbox",
-    mode: isConfigured ? "sandbox" : "simulation",
+    mode: effectiveMode,
     reviewThreshold: envThreshold,
     storageType: "local_durable_file",
     aiProvider: hasVerified
@@ -42,6 +47,8 @@ export async function GET() {
     writesProtected,
     protectionPolicy,
     demoMode: !demoModeDisabled,
+    adminAuthenticated: isAdmin,
+    canExecuteSandbox: isConfigured && isAdmin,
   };
 
   return NextResponse.json(config);

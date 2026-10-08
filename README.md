@@ -7,7 +7,7 @@
 [![Next.js 14](https://img.shields.io/badge/Next.js-14.2%20App%20Router-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38BDF8?logo=tailwind-css)](https://tailwindcss.com)
-[![Tests Passing](https://img.shields.io/badge/Tests-33%2F33%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
+[![Tests Passing](https://img.shields.io/badge/Tests-37%2F37%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
 [![ESLint Passing](https://img.shields.io/badge/ESLint-Clean-brightgreen?logo=eslint)](https://eslint.org)
 
 ---
@@ -239,20 +239,24 @@ npm test
 31. `Inconsistent order provenance rejection` — Rejects mismatched combinations (real PayPal ID on simulated goal or simulated order ID on Sandbox goal).
 32. `Production read API scoping` — Protects customer profiles, notes, payment history, memories, and real sandbox goals from unauthenticated public visitors in production.
 33. `Production demo agent workflow isolation` — Anonymous agent prompts in public demo mode execute safely isolated strictly to simulation data without exposing admin keys.
+34. `Cross-visitor data isolation` — Anonymous public demo users' goals, customers, and memories are tagged by `visitorId` and isolated; visitors only see canonical demo fixtures and their own session records; metrics never leak other visitors' transaction volumes.
+35. `UI-visible mode truthfulness` — `/api/config` truthfully reports `mode: "simulation"` for anonymous visitors even when server credentials exist; reports `mode: "sandbox"` only for authenticated admin sessions.
+36. `UI Admin Auth session login/logout` — Evaluators authenticate securely via `/api/auth/session` setting an encrypted `httpOnly` cookie; secrets are never leaked to client bundles; logout safely reverts to anonymous simulation.
+37. `Canonical fixture scoping & metric integrity` — Enforces exact canonical ID sets (`CANONICAL_DEMO_GOAL_IDS`, etc.) for public demo; metrics are calculated strictly over scoped records.
 
 ---
 
 ## Current Architecture, Persistence Limits & Submission Evidence
 
-- **Runtime Mode:** Operates out of the box in verified **Simulation Mode** (deterministic local engine, zero external network dependency). Switches automatically to **Live PayPal Sandbox** and **Live Google Gemini** once developer credentials are provided in `.env`.
+- **Runtime Mode:** Operates out of the box in verified **Simulation Mode** (deterministic local engine, zero external network dependency). Switches automatically to **Live PayPal Sandbox** and **Live Google Gemini** once credentials and an authorized session are established.
+- **In-UI Judge Sandbox Authentication:** Evaluators can click "Unlock Sandbox" in the dashboard header, enter the judge key (`paypal_sandbox_judge_2026` or configured `PAYPILOT_ADMIN_KEY`), and execute live PayPal Sandbox Orders v2 directly from the browser UI without terminal commands.
+- **Cross-Visitor Data Isolation:** Public demo visitors only see canonical fixtures (`goal_sarah_1200`, `goal_john_850`, `goal_mike_2500`, `goal_acme_600`) and their own isolated inputs.
 - **Sandbox Security & Order Provenance:** Real PayPal Sandbox goals can only be approved and captured through official PayPal buyer approval with administrative authorization. Validated order provenance prevents stale simulation flags from exposing Sandbox orders to anonymous capture.
-- **Production Demo Security:** Anonymous visitors in hosted production are strictly scoped to canonical demo fixtures and simulation data; sensitive customer notes, emails, payment histories, and real sandbox transactions are never leaked.
 - **Truthful Payout Review Ledger:** Payout review approval records internal safety sign-off only; vendor balances remain unchanged and no completed payment records are added without real PayPal Payouts execution.
-- **Local File Persistence:** Data is stored in `data/paypilot_db.json`. Demo reset restores canonical fixtures while preserving all non-demo user goals, customers, memories, and recommendations of arbitrary IDs.
 - **Required Submission Evidence (Owner Checklist):**
   - [x] Public GitHub repository with open-source MIT license (`https://github.com/venkatkrish98/paypilot-ai`).
-  - [x] Complete automated test suite (33/33 passing) and clean production build.
-  - [ ] Live PayPal Sandbox Client ID & Secret configured for live judge testing.
-  - [ ] Live Google Gemini API Key configured for live LLM planning.
+  - [x] Complete automated test suite (37/37 passing) and clean production build.
+  - [x] Live Google Gemini 2.5 Flash API Key configured in `.env`.
+  - [x] In-UI evaluator auth workflow for testing live PayPal Sandbox execution.
+  - [ ] Public YouTube demo video (must be publicly visible on YouTube, under 3 minutes per [Devpost rules](https://paypalaihackathon.devpost.com/rules)).
   - [ ] Publicly hosted deployment URL (e.g. Vercel / Cloud Run).
-  - [ ] 2.5-minute demo video walkthrough (script in `HACKATHON_SUBMISSION.md`).
