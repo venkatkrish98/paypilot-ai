@@ -16,6 +16,7 @@ interface GoalsTableProps {
   onSimulatePayment: (goalId: string) => void;
   onApproveGoal: (goalId: string) => void;
   initialFilter?: string;
+  isLoading?: boolean;
 }
 
 export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
@@ -24,6 +25,7 @@ export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
   onSimulatePayment,
   onApproveGoal,
   initialFilter = "all",
+  isLoading = false,
 }) => {
   const [activeFilter, setActiveFilter] = useState<string>(initialFilter);
 
@@ -31,7 +33,7 @@ export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
     if (activeFilter === "all") return true;
     if (activeFilter === "awaiting_payment")
       return g.status === "awaiting_payment" || g.status === "payment_created";
-    if (activeFilter === "paid") return g.status === "paid";
+    if (activeFilter === "paid") return g.status === "paid" || g.status === "payout_approved";
     if (activeFilter === "pending_approval")
       return g.status === "pending_approval" || g.riskLevel === "high";
     return true;
@@ -44,6 +46,13 @@ export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
           <span className="inline-flex items-center space-x-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30">
             <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
             <span>{goal.isSimulated ? "Simulated Paid" : "Sandbox Paid"}</span>
+          </span>
+        );
+      case "payout_approved":
+        return (
+          <span className="inline-flex items-center space-x-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/15 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30">
+            <CheckCircle2 className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+            <span>Disbursement Authorized (Simulation)</span>
           </span>
         );
       case "awaiting_payment":
@@ -122,7 +131,28 @@ export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
 
       {/* Goals List */}
       <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-        {filteredGoals.length === 0 ? (
+        {isLoading ? (
+          <div className="p-4 space-y-3" role="status" aria-label="Loading payment goals">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="animate-pulse flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/40"
+              >
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800" />
+                  <div className="space-y-1.5">
+                    <div className="w-28 h-3.5 bg-slate-200 dark:bg-slate-800 rounded" />
+                    <div className="w-44 h-2.5 bg-slate-100 dark:bg-slate-850 rounded" />
+                  </div>
+                </div>
+                <div className="space-y-1 text-right">
+                  <div className="w-16 h-3.5 bg-slate-200 dark:bg-slate-800 rounded ml-auto" />
+                  <div className="w-20 h-2.5 bg-slate-100 dark:bg-slate-850 rounded ml-auto" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredGoals.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-500">
             No payment goals match the selected filter.
           </div>

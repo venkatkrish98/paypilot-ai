@@ -5,7 +5,7 @@
 
 import fs from "fs";
 import path from "path";
-import { Customer, PaymentGoal, MemoryItem, AIRecommendation, TimelineEvent } from "../types";
+import { Customer, PaymentGoal, MemoryItem, AIRecommendation, TimelineEvent, DashboardMetrics } from "../types";
 
 import { getNextDayOfWeek } from "../agent/ai-planner";
 
@@ -24,9 +24,20 @@ export class DatabaseStore {
   private memories: Map<string, MemoryItem> = new Map();
   private recommendations: Map<string, AIRecommendation> = new Map();
   private filePath: string;
+  private isInMemory: boolean = false;
   private isPersisting: boolean = false;
 
   constructor(customFilePath?: string) {
+    const envPath = process.env.PAYPILOT_DB_PATH;
+    const targetPath = customFilePath || envPath;
+
+    if (targetPath === ":memory:") {
+      this.isInMemory = true;
+      this.filePath = ":memory:";
+      this.seedDemoData();
+      return;
+    }
+
     const dataDir = path.resolve(process.cwd(), "data");
     if (!fs.existsSync(dataDir)) {
       try {
@@ -35,11 +46,20 @@ export class DatabaseStore {
         console.warn("Could not create data directory, using memory fallback:", e);
       }
     }
-    this.filePath = customFilePath || path.join(dataDir, "paypilot_db.json");
+    this.filePath = targetPath || path.join(dataDir, "paypilot_db.json");
     this.loadFromDisk();
   }
 
+  public getFilePath(): string {
+    return this.filePath;
+  }
+
   private loadFromDisk(): void {
+    if (this.isInMemory || this.filePath === ":memory:") {
+      this.seedDemoData();
+      return;
+    }
+
     try {
       if (fs.existsSync(this.filePath)) {
         const raw = fs.readFileSync(this.filePath, "utf-8");
@@ -62,6 +82,10 @@ export class DatabaseStore {
   }
 
   public persistToDisk(): void {
+    if (this.isInMemory || this.filePath === ":memory:") {
+      return; // In-memory database does not touch filesystem
+    }
+
     if (this.isPersisting) return;
     this.isPersisting = true;
     try {
@@ -537,22 +561,37 @@ export class DatabaseStore {
    * Restores customer ledger balances to match the canonical fixtures.
    */
   public resetDemoFixtures(): void {
-    // 1. Identify non-demo user goals to preserve
+    const CANONICAL_GOAL_IDS = new Set([
+      "goal_sarah_1200",
+      "goal_john_850",
+      "goal_mike_2500",
+      "goal_acme_600",
+    ]);
+
+    const CANONICAL_CUSTOMER_IDS = new Set([
+      "cust_sarah",
+      "cust_john",
+      "cust_mike",
+      "cust_acme",
+    ]);
+
+    // 1. Identify non-demo user records to preserve.
+    // Pure metadata & canonical ID matching — ZERO heuristic ID prefix checks!
     const nonDemoUserGoals: PaymentGoal[] = [];
     const nonDemoUserCustomers: Customer[] = [];
 
     for (const goal of Array.from(this.goals.values())) {
-      if (
-        goal.isDemoFixture === false &&
-        !goal.id.startsWith("goal_1791") &&
-        !goal.id.includes("test_")
-      ) {
+      // If it is NOT one of the 4 canonical fixtures and NOT explicitly marked isDemoFixture === true, preserve it!
+      // This preserves user goals with legacy or arbitrary IDs.
+      if (!CANONICAL_GOAL_IDS.has(goal.id) && goal.isDemoFixture !== true) {
         nonDemoUserGoals.push(goal);
       }
     }
 
     for (const cust of Array.from(this.customers.values())) {
-      if (cust.isDemoFixture === false && !cust.id.startsWith("cust_")) {
+      // If it is NOT one of the 4 canonical customer fixtures and NOT explicitly marked isDemoFixture === true, preserve it!
+      // This preserves normal cust_<id> user-created customers completely.
+      if (!CANONICAL_CUSTOMER_IDS.has(cust.id) && cust.isDemoFixture !== true) {
         nonDemoUserCustomers.push(cust);
       }
     }
@@ -718,10 +757,13 @@ export class DatabaseStore {
   }
 
   // KPI Metrics
-  public getMetrics() {
+  public getMetrics(): DashboardMetrics {
     const all = this.getGoals();
-    const awaiting = all.filter((g) => g.status === "awaiting_payment" || g.status === "payment_created");
-    const paid = all.filter((g) => g.status === "paid");
+    const awaiting = all.filter(
+      (g) => (g.status === "awaiting_payment" || g.status === "payment_created") && g.goalType === "collection"
+    );
+    // CRITICAL: Collected incoming customer money ONLY
+    const paid = all.filter((g) => g.status === "paid" && g.goalType === "collection");
     const attention = all.filter((g) => g.status === "pending_approval" || g.riskLevel === "high");
 
     const awaitingAmount = awaiting.reduce((sum, g) => sum + g.amount, 0);
@@ -729,6 +771,13 @@ export class DatabaseStore {
 
     const sandboxPaid = paid.filter((g) => !g.isSimulated);
     const simulatedPaid = paid.filter((g) => g.isSimulated);
+
+    // Dedicated Payout Review Metrics (Separate from incoming customer collections)
+    const payoutReviews = all.filter((g) => g.goalType === "payout_review");
+    const approvedPayouts = payoutReviews.filter(
+      (g) => g.status === "payout_approved" || g.approvalStatus === "approved"
+    );
+    const approvedPayoutsAmount = approvedPayouts.reduce((sum, g) => sum + g.amount, 0);
 
     return {
       totalGoals: all.length,
@@ -740,6 +789,8 @@ export class DatabaseStore {
       sandboxPaidAmount: sandboxPaid.reduce((sum, g) => sum + g.amount, 0),
       simulatedPaidCount: simulatedPaid.length,
       simulatedPaidAmount: simulatedPaid.reduce((sum, g) => sum + g.amount, 0),
+      payoutApprovedCount: approvedPayouts.length,
+      payoutApprovedAmount: approvedPayoutsAmount,
       attentionCount: attention.length,
     };
   }
@@ -749,8 +800,28 @@ export class DatabaseStore {
 const globalStoreKey = Symbol.for("paypilot.database.store");
 const globalObj = globalThis as unknown as { [globalStoreKey]?: DatabaseStore };
 
-if (!globalObj[globalStoreKey]) {
-  globalObj[globalStoreKey] = new DatabaseStore();
+export function setGlobalDatabase(store: DatabaseStore): void {
+  globalObj[globalStoreKey] = store;
 }
 
-export const db = globalObj[globalStoreKey]!;
+export const db: DatabaseStore = new Proxy({} as DatabaseStore, {
+  get(_target, prop) {
+    if (!globalObj[globalStoreKey]) {
+      globalObj[globalStoreKey] = new DatabaseStore();
+    }
+    const instance = globalObj[globalStoreKey]!;
+    const val = Reflect.get(instance, prop);
+    if (typeof val === "function") {
+      return val.bind(instance);
+    }
+    return val;
+  },
+  set(_target, prop, value) {
+    if (!globalObj[globalStoreKey]) {
+      globalObj[globalStoreKey] = new DatabaseStore();
+    }
+    const instance = globalObj[globalStoreKey]!;
+    return Reflect.set(instance, prop, value);
+  },
+});
+

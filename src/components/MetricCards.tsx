@@ -14,12 +14,36 @@ interface MetricsProps {
     sandboxPaidAmount?: number;
     simulatedPaidCount?: number;
     simulatedPaidAmount?: number;
+    payoutApprovedCount?: number;
+    payoutApprovedAmount?: number;
     attentionCount: number;
-  };
+  } | null;
+  isLoading?: boolean;
   onFilterClick?: (filter: string) => void;
 }
 
-export const MetricCards: React.FC<MetricsProps> = ({ metrics, onFilterClick }) => {
+export const MetricCards: React.FC<MetricsProps> = ({ metrics, isLoading = false, onFilterClick }) => {
+  // Skeleton Loading Placeholders
+  if (isLoading || !metrics) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" role="status" aria-label="Loading dashboard metrics">
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 animate-pulse space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <div className="w-20 h-3 bg-slate-200 dark:bg-slate-800 rounded" />
+              <div className="w-7 h-7 bg-slate-100 dark:bg-slate-800 rounded-lg" />
+            </div>
+            <div className="w-24 h-7 bg-slate-200 dark:bg-slate-800 rounded" />
+            <div className="w-32 h-2.5 bg-slate-100 dark:bg-slate-850 rounded" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {/* 1. Total Goals */}
@@ -81,17 +105,17 @@ export const MetricCards: React.FC<MetricsProps> = ({ metrics, onFilterClick }) 
         </div>
       </div>
 
-      {/* 3. Paid & Completed */}
+      {/* 3. Collected Incoming Payments */}
       <div
         onClick={() => onFilterClick?.("paid")}
         tabIndex={0}
         role="button"
-        aria-label={`Collected: ${metrics.paidAmount} USD across ${metrics.paidCount} completed goals`}
+        aria-label={`Total collected: ${metrics.paidAmount} USD across ${metrics.paidCount} completed collections`}
         className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-600/40 transition cursor-pointer group shadow-2xs focus-visible:ring-2 focus-visible:ring-paypal-blue"
       >
         <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
           <span className="text-[11px] font-bold tracking-wider uppercase text-emerald-600 dark:text-emerald-400">
-            Total Paid
+            Total Collected
           </span>
           <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -102,16 +126,16 @@ export const MetricCards: React.FC<MetricsProps> = ({ metrics, onFilterClick }) 
             ${metrics.paidAmount.toLocaleString()}
           </span>
           <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
-            {metrics.paidCount} paid
+            {metrics.paidCount} collected
           </span>
         </div>
         <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-          {metrics.sandboxPaidCount && metrics.sandboxPaidCount > 0 ? (
-            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-              ${metrics.sandboxPaidAmount?.toLocaleString()} Sandbox &bull; ${metrics.simulatedPaidAmount?.toLocaleString()} Simulated
+          {metrics.payoutApprovedCount && metrics.payoutApprovedCount > 0 ? (
+            <span className="text-purple-600 dark:text-purple-400 font-medium">
+              +{metrics.payoutApprovedCount} payout approved (${metrics.payoutApprovedAmount?.toLocaleString()}) [Sim]
             </span>
           ) : (
-            <span>Verified captures &amp; completions</span>
+            <span>Confirmed incoming client collections</span>
           )}
         </div>
       </div>

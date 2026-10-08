@@ -46,9 +46,9 @@ export async function PATCH(
     }
 
     // Immutable Terminal States
-    if (existing.status === "paid") {
+    if (existing.status === "paid" || existing.status === "payout_approved") {
       return NextResponse.json(
-        { error: "Cannot modify payment goal: reconciled paid transactions are immutable." },
+        { error: "Cannot modify payment goal: reconciled paid transactions and authorized disbursements are immutable." },
         { status: 400 }
       );
     }
@@ -77,6 +77,7 @@ export async function PATCH(
         "payment_created",
         "awaiting_payment",
         "paid",
+        "payout_approved",
         "failed",
         "expired",
         "cancelled",

@@ -14,8 +14,8 @@ import { MemoryView } from "@/components/MemoryView";
 import { ActivityView } from "@/components/ActivityView";
 import { SettingsView } from "@/components/SettingsView";
 import { AIRecommendationsCard } from "@/components/AIRecommendationsCard";
-import { PaymentGoal, AIRecommendation, ExecutionMode } from "@/packages/types";
-import { Bot, Menu, Sparkles, Sun, Moon, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { PaymentGoal, AIRecommendation, ExecutionMode, DashboardMetrics } from "@/packages/types";
+import { Bot, Menu, Sparkles, Sun, Moon, AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
 
 export default function Home() {
   const [currentTab, setCurrentTab] = useState<NavTab>("dashboard");
@@ -29,19 +29,9 @@ export default function Home() {
   const [isDark, setIsDark] = useState<boolean>(true);
   const [mode, setMode] = useState<ExecutionMode>("simulation");
   const [globalNotice, setGlobalNotice] = useState<{ type: "success" | "error"; message: string } | null>(null);
-
-  const [metrics, setMetrics] = useState({
-    totalGoals: 4,
-    awaitingCount: 2,
-    awaitingAmount: 1800,
-    paidCount: 1,
-    paidAmount: 850,
-    sandboxPaidCount: 0,
-    sandboxPaidAmount: 0,
-    simulatedPaidCount: 1,
-    simulatedPaidAmount: 850,
-    attentionCount: 1,
-  });
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Shared Chat Messages State between Dashboard and Command Center
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -63,6 +53,9 @@ export default function Home() {
     } else {
       document.documentElement.classList.remove("dark");
     }
+
+    // Initialize session token for same-origin authentication
+    fetch("/api/auth/session").catch(() => {});
 
     // Fetch system configuration safely
     fetch("/api/config")
@@ -87,16 +80,19 @@ export default function Home() {
 
   const fetchData = async () => {
     try {
+      setFetchError(null);
       const [goalsRes, recsRes] = await Promise.all([
         fetch("/api/goals"),
         fetch("/api/recommendations"),
       ]);
 
-      if (goalsRes.ok) {
-        const goalsData = await goalsRes.json();
-        if (goalsData.goals) setGoals(goalsData.goals);
-        if (goalsData.metrics) setMetrics(goalsData.metrics);
+      if (!goalsRes.ok) {
+        throw new Error(`Failed to load goals (${goalsRes.status})`);
       }
+
+      const goalsData = await goalsRes.json();
+      if (goalsData.goals) setGoals(goalsData.goals);
+      if (goalsData.metrics) setMetrics(goalsData.metrics);
 
       if (recsRes.ok) {
         const recsData = await recsRes.json();
@@ -104,6 +100,9 @@ export default function Home() {
       }
     } catch (e) {
       console.error(e);
+      setFetchError(e instanceof Error ? e.message : "Error fetching dashboard data");
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
@@ -216,7 +215,7 @@ export default function Home() {
       <Sidebar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
-        pendingApprovalCount={metrics.attentionCount}
+        pendingApprovalCount={metrics ? metrics.attentionCount : 0}
         onResetDemo={handleResetDemo}
         isResetting={isResetting}
         isOpenMobile={isOpenMobile}
@@ -327,9 +326,30 @@ export default function Home() {
               mode={mode}
             />
 
+            {/* Fetch Error Banner with Retry */}
+            {fetchError && (
+              <div
+                className="p-3.5 rounded-xl border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 text-xs flex items-center justify-between"
+                role="alert"
+              >
+                <div className="flex items-center space-x-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />
+                  <span>{fetchError}</span>
+                </div>
+                <button
+                  onClick={fetchData}
+                  className="flex items-center space-x-1 px-2.5 py-1 rounded-md bg-red-600 hover:bg-red-500 text-white font-semibold text-xs transition"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Retry</span>
+                </button>
+              </div>
+            )}
+
             {/* 2. KPI Metrics */}
             <MetricCards
               metrics={metrics}
+              isLoading={isLoadingData}
               onFilterClick={(f) => {
                 if (f === "pending_approval") setCurrentTab("approvals");
                 else setCurrentTab("goals");
@@ -349,6 +369,7 @@ export default function Home() {
               <div className="lg:col-span-7">
                 <PaymentGoalsTable
                   goals={goals}
+                  isLoading={isLoadingData}
                   onOpenDetails={(g) => setSelectedGoal(g)}
                   onSimulatePayment={handleSimulatePayment}
                   onApproveGoal={handleApproveGoal}

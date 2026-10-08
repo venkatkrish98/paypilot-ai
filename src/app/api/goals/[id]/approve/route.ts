@@ -20,7 +20,7 @@ export async function POST(
     }
 
     // Idempotency: Reject invalid transitions
-    if (goal.status === "awaiting_payment" || goal.status === "paid" || goal.approvalStatus === "approved") {
+    if (goal.status === "awaiting_payment" || goal.status === "paid" || goal.status === "payout_approved" || goal.approvalStatus === "approved") {
       return NextResponse.json(
         {
           error: "Goal has already been approved.",
@@ -56,11 +56,10 @@ export async function POST(
         isSimulated: true,
       };
 
-      goal.status = "paid";
+      goal.status = "payout_approved";
       goal.approvalStatus = "approved";
       goal.approvedAt = new Date().toISOString();
       goal.approvedBy = "Administrator (User)";
-      goal.paidAt = new Date().toISOString();
       goal.timeline.push(approveEvent);
 
       db.saveGoal(goal);

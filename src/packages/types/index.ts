@@ -9,9 +9,25 @@ export type GoalStatus =
   | "payment_created"
   | "awaiting_payment"
   | "paid"
+  | "payout_approved"
   | "failed"
   | "expired"
   | "cancelled";
+
+export interface DashboardMetrics {
+  totalGoals: number;
+  awaitingCount: number;
+  awaitingAmount: number;
+  paidCount: number;
+  paidAmount: number;
+  sandboxPaidCount?: number;
+  sandboxPaidAmount?: number;
+  simulatedPaidCount?: number;
+  simulatedPaidAmount?: number;
+  payoutApprovedCount?: number;
+  payoutApprovedAmount?: number;
+  attentionCount: number;
+}
 
 export type GoalType = "collection" | "payout_review";
 
