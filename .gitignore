@@ -27,8 +27,8 @@ yarn-error.log*
 .env
 !.env.example
 
-# Local DB
-data/paypilot_db.json
+# Local runtime DB & storage
+data/
 
 # Antigravity artifacts
 .system_generated/
