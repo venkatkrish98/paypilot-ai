@@ -10,6 +10,7 @@ import {
   attachVisitorCookie,
   scopeGoalsForRequester,
   validateOrderProvenance,
+  checkGoalMutationOwnership,
 } from "@/packages/security/auth";
 
 export async function POST(
@@ -48,24 +49,12 @@ export async function POST(
     const isAdmin = isRequestAdmin(req);
     const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
 
-    // 3. Real authorization & scoping check: Anonymous callers can NEVER capture real Sandbox orders or other visitors' goals
-    if (!isAdmin) {
-      if (isRealSandboxOrder) {
-        return NextResponse.json(
-          { error: "Unauthorized: Real PayPal Sandbox operations require administrative authorization." },
-          { status: 401 }
-        );
-      }
-
-      const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(goal.id);
-      const isOwnGoal =
-        goal.isSimulated && (!goal.visitorId || (Boolean(visitorId) && goal.visitorId === visitorId));
-      if (!isCanonical && !isOwnGoal) {
-        return NextResponse.json(
-          { error: "Access restricted: You cannot capture goals belonging to other sessions." },
-          { status: 403 }
-        );
-      }
+    const ownership = checkGoalMutationOwnership(goal, isAdmin, visitorId);
+    if (!ownership.allowed) {
+      return NextResponse.json(
+        { error: ownership.reason || "Access restricted" },
+        { status: ownership.statusCode || 403 }
+      );
     }
 
     const auth = checkWriteAuthorization(req, {

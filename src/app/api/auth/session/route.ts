@@ -8,14 +8,9 @@ import {
   recordFailedAuth,
   clearFailedAuth,
   resolveVisitorIdentity,
+  getTrustedClientIp,
 } from "@/packages/security/auth";
 import { defaultPayPalClient } from "@/packages/paypal";
-
-function getClientIdentifier(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip") || "local_client";
-}
 
 export async function GET(req: Request) {
   const isAdmin = isRequestAdmin(req);
@@ -57,7 +52,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const clientIp = getClientIdentifier(req);
+    const clientIp = getTrustedClientIp(req);
 
     // 1. Check Rate Limit / Lockout
     const lockout = checkAuthLockout(clientIp);

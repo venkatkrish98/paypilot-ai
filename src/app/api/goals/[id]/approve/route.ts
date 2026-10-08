@@ -9,6 +9,7 @@ import {
   resolveVisitorIdentity,
   attachVisitorCookie,
   scopeGoalsForRequester,
+  checkGoalMutationOwnership,
 } from "@/packages/security/auth";
 
 export async function POST(
@@ -40,28 +41,12 @@ export async function POST(
       );
     }
 
-    if (!isAdmin) {
-      const isRealSandbox =
-        !goal.isSimulated ||
-        goal.mode === "sandbox" ||
-        (Boolean(goal.paypalOrderId) && !goal.paypalOrderId?.startsWith("SIMULATED_"));
-
-      if (isRealSandbox) {
-        return NextResponse.json(
-          { error: "Access restricted: Real PayPal Sandbox operations require administrative authorization." },
-          { status: 401 }
-        );
-      }
-
-      const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(goal.id);
-      const isOwnGoal =
-        goal.isSimulated && (!goal.visitorId || (Boolean(visitorId) && goal.visitorId === visitorId));
-      if (!isCanonical && !isOwnGoal) {
-        return NextResponse.json(
-          { error: "Access restricted: You cannot approve goals belonging to other sessions." },
-          { status: 403 }
-        );
-      }
+    const ownership = checkGoalMutationOwnership(goal, isAdmin, visitorId);
+    if (!ownership.allowed) {
+      return NextResponse.json(
+        { error: ownership.reason || "Access restricted" },
+        { status: ownership.statusCode || 403 }
+      );
     }
 
     const forceSimulation = !willBeRealSandbox;

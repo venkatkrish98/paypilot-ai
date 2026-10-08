@@ -30,7 +30,13 @@ export async function POST(req: Request) {
     const isAdmin = isRequestAdmin(req);
     const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
 
-    db.resetDemoFixtures();
+    if (isAdmin) {
+      db.resetDemoFixtures();
+    } else {
+      // Anonymous visitor resets only their own simulation records!
+      // NEVER touches shared canonical fixtures or another visitor's records!
+      db.resetVisitorRecords(visitorId);
+    }
 
     const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
     const visibleCustomers = scopeCustomersForRequester(db.getCustomers(), isAdmin, visitorId);
@@ -38,7 +44,9 @@ export async function POST(req: Request) {
 
     const response = NextResponse.json({
       success: true,
-      message: "Database safely reset to canonical demo fixtures",
+      message: isAdmin
+        ? "Database safely reset to canonical demo fixtures"
+        : "Visitor session data reset to pristine demo baseline",
       metrics,
       goals: visibleGoals,
       customers: visibleCustomers,

@@ -28,6 +28,8 @@ let initialRealDbExists = false;
 let initialRealDbMtime = 0;
 let initialRealDbContent: string | null = null;
 
+const TEST_ADMIN_KEY = "test_admin_key_suite_2026";
+
 describe("PayPilot AI Test Suite", () => {
   beforeAll(() => {
     if (fs.existsSync(realDbPath)) {
@@ -38,6 +40,7 @@ describe("PayPilot AI Test Suite", () => {
   });
 
   beforeEach(() => {
+    process.env.PAYPILOT_ADMIN_KEY = TEST_ADMIN_KEY;
     // Reset database to initial deterministic demo state in-memory before each test
     db.seedDemoData();
   });
@@ -476,7 +479,10 @@ describe("PayPilot AI Test Suite", () => {
 
     const req = new Request("http://localhost:3000/api/goals/goal_mike_2500", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        authorization: `Bearer ${TEST_ADMIN_KEY}`,
+      },
       body: JSON.stringify({ status: "awaiting_payment" }),
     });
 
@@ -491,6 +497,9 @@ describe("PayPilot AI Test Suite", () => {
     const { POST: capturePost } = await import("../src/app/api/goals/[id]/capture/route");
     const req = new Request("http://localhost:3000/api/goals/goal_mike_2500/capture", {
       method: "POST",
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_KEY}`,
+      },
     });
 
     const res = await capturePost(req, { params: { id: "goal_mike_2500" } });
@@ -504,6 +513,9 @@ describe("PayPilot AI Test Suite", () => {
     const { POST: approvePost } = await import("../src/app/api/goals/[id]/approve/route");
     const req1 = new Request("http://localhost:3000/api/goals/goal_mike_2500/approve", {
       method: "POST",
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_KEY}`,
+      },
     });
 
     // First approval
@@ -513,6 +525,9 @@ describe("PayPilot AI Test Suite", () => {
     // Second approval attempt should be rejected with 409 Conflict
     const req2 = new Request("http://localhost:3000/api/goals/goal_mike_2500/approve", {
       method: "POST",
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_KEY}`,
+      },
     });
     const res2 = await approvePost(req2, { params: { id: "goal_mike_2500" } });
     expect(res2.status).toBe(409);
@@ -785,6 +800,9 @@ describe("PayPilot AI Test Suite", () => {
     const { POST: approvePost } = await import("../src/app/api/goals/[id]/approve/route");
     const req = new Request("http://localhost:3000/api/goals/goal_mike_2500/approve", {
       method: "POST",
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_KEY}`,
+      },
     });
 
     const res = await approvePost(req, { params: { id: "goal_mike_2500" } });
@@ -1860,6 +1878,206 @@ describe("PayPilot AI Test Suite", () => {
       db.deleteGoal("goal_visitor_a_private");
       db.deleteCustomer("cust_visitor_a");
       db.deleteMemory("mem_visitor_a");
+    }
+  });
+
+  // 42. Two distinct signed visitor sessions regression test (Requirements 1, 2, 3, 4, 5)
+  it("42. should enforce two distinct signed visitor sessions: canonical fixtures remain strictly read-only, visitors cannot mutate or reset each other's data, and trusted proxy IP is enforced", async () => {
+    const { createSignedVisitorToken, getTrustedClientIp } = await import(
+      "../src/packages/security/auth"
+    );
+    const { GET: getGoals } = await import("../src/app/api/goals/route");
+    const { GET: getGoalById, PATCH: patchGoal } = await import("../src/app/api/goals/[id]/route");
+    const { POST: approveGoal } = await import("../src/app/api/goals/[id]/approve/route");
+    const { POST: captureGoal } = await import("../src/app/api/goals/[id]/capture/route");
+    const { POST: postRec } = await import("../src/app/api/recommendations/route");
+    const { POST: resetDemo } = await import("../src/app/api/demo/reset/route");
+
+    // 1. Establish two distinct verified visitor sessions
+    const { token: tokenA, visitorId: vidA } = createSignedVisitorToken();
+    const { token: tokenB, visitorId: vidB } = createSignedVisitorToken();
+    expect(vidA).not.toBe(vidB);
+
+    // 2. Canonical demo fixtures are strictly read-only to anonymous visitors
+    // Visitor A tries to approve canonical goal_mike_2500 -> 403 Forbidden!
+    const approveCanReq = new Request("http://localhost:3000/api/goals/goal_mike_2500/approve", {
+      method: "POST",
+      headers: { Cookie: `paypilot_visitor_session=${tokenA}` },
+    });
+    const approveCanRes = await approveGoal(approveCanReq, { params: { id: "goal_mike_2500" } });
+    expect(approveCanRes.status).toBe(403);
+    const approveCanData = await approveCanRes.json();
+    expect(approveCanData.error).toContain("read-only");
+
+    // Visitor A tries to capture canonical goal_sarah_1200 -> 403 Forbidden!
+    const captureCanReq = new Request("http://localhost:3000/api/goals/goal_sarah_1200/capture", {
+      method: "POST",
+      headers: {
+        Cookie: `paypilot_visitor_session=${tokenA}`,
+        "x-simulation-checkout": "true",
+      },
+    });
+    const captureCanRes = await captureGoal(captureCanReq, { params: { id: "goal_sarah_1200" } });
+    expect(captureCanRes.status).toBe(403);
+
+    // Visitor A tries to edit canonical goal_sarah_1200 via PATCH -> 403 Forbidden!
+    const patchCanReq = new Request("http://localhost:3000/api/goals/goal_sarah_1200", {
+      method: "PATCH",
+      headers: {
+        Cookie: `paypilot_visitor_session=${tokenA}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ notes: "Malicious note" }),
+    });
+    const patchCanRes = await patchGoal(patchCanReq, { params: { id: "goal_sarah_1200" } });
+    expect(patchCanRes.status).toBe(403);
+
+    // Visitor A tries to dismiss canonical recommendation rec_1 -> 403 Forbidden!
+    const recCanReq = new Request("http://localhost:3000/api/recommendations", {
+      method: "POST",
+      headers: {
+        Cookie: `paypilot_visitor_session=${tokenA}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id: "rec_1", action: "dismiss" }),
+    });
+    const recCanRes = await postRec(recCanReq);
+    expect(recCanRes.status).toBe(403);
+
+    // Verify canonical state was 100% untouched
+    expect(db.getGoalById("goal_mike_2500")?.status).toBe("pending_approval");
+    expect(db.getGoalById("goal_sarah_1200")?.status).toBe("awaiting_payment");
+    expect(db.getRecommendationById("rec_1")).toBeDefined();
+
+    // 3. Create Visitor A's own simulation goal
+    const goalVisA: PaymentGoal = {
+      id: "goal_vis_a_own",
+      goal: "Simulated Goal for Visitor A",
+      goalType: "payout_review",
+      customer: "Vendor A",
+      amount: 450,
+      currency: "USD",
+      status: "pending_approval",
+      mode: "simulation",
+      isSimulated: true,
+      requiresApproval: true,
+      approvalStatus: "pending",
+      riskLevel: "low",
+      riskScore: 10,
+      riskChecks: [],
+      createdBy: "agent",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      visitorId: vidA,
+      timeline: [],
+    };
+    db.saveGoal(goalVisA);
+
+    // 4. Create Visitor B's own simulation goal
+    const goalVisB: PaymentGoal = {
+      id: "goal_vis_b_own",
+      goal: "Simulated Goal for Visitor B",
+      goalType: "collection",
+      customer: "Customer B",
+      amount: 750,
+      currency: "USD",
+      status: "awaiting_payment",
+      mode: "simulation",
+      isSimulated: true,
+      paypalOrderId: "SIMULATED_ORD_B_750",
+      riskLevel: "low",
+      riskScore: 15,
+      riskChecks: [],
+      createdBy: "agent",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      visitorId: vidB,
+      timeline: [],
+    };
+    db.saveGoal(goalVisB);
+
+    try {
+      // Visitor A can see their own goal, but NOT Visitor B's goal
+      const reqListA = new Request("http://localhost:3000/api/goals", {
+        headers: { Cookie: `paypilot_visitor_session=${tokenA}` },
+      });
+      const dataListA = await (await getGoals(reqListA)).json();
+      expect(dataListA.goals.some((g: PaymentGoal) => g.id === "goal_vis_a_own")).toBe(true);
+      expect(dataListA.goals.some((g: PaymentGoal) => g.id === "goal_vis_b_own")).toBe(false);
+
+      // Visitor B cannot view Visitor A's goal directly -> 403 Forbidden!
+      const reqGetAasB = new Request("http://localhost:3000/api/goals/goal_vis_a_own", {
+        headers: { Cookie: `paypilot_visitor_session=${tokenB}` },
+      });
+      const resGetAasB = await getGoalById(reqGetAasB, { params: { id: "goal_vis_a_own" } });
+      expect(resGetAasB.status).toBe(403);
+
+      // Visitor B cannot approve Visitor A's goal -> 403 Forbidden!
+      const reqApproveAasB = new Request("http://localhost:3000/api/goals/goal_vis_a_own/approve", {
+        method: "POST",
+        headers: { Cookie: `paypilot_visitor_session=${tokenB}` },
+      });
+      const resApproveAasB = await approveGoal(reqApproveAasB, { params: { id: "goal_vis_a_own" } });
+      expect(resApproveAasB.status).toBe(403);
+
+      // Visitor B cannot capture Visitor A's goal -> 403 Forbidden!
+      const reqCaptureAasB = new Request("http://localhost:3000/api/goals/goal_vis_a_own/capture", {
+        method: "POST",
+        headers: {
+          Cookie: `paypilot_visitor_session=${tokenB}`,
+          "x-simulation-checkout": "true",
+        },
+      });
+      const resCaptureAasB = await captureGoal(reqCaptureAasB, { params: { id: "goal_vis_a_own" } });
+      expect(resCaptureAasB.status).toBe(403);
+
+      // Visitor A CAN approve their own goal -> 200 OK!
+      const reqApproveAasA = new Request("http://localhost:3000/api/goals/goal_vis_a_own/approve", {
+        method: "POST",
+        headers: { Cookie: `paypilot_visitor_session=${tokenA}` },
+      });
+      const resApproveAasA = await approveGoal(reqApproveAasA, { params: { id: "goal_vis_a_own" } });
+      expect(resApproveAasA.status).toBe(200);
+      expect(db.getGoalById("goal_vis_a_own")?.approvalStatus).toBe("approved");
+
+      // 5. Visitor A resets demo: Resets ONLY Visitor A's records!
+      const reqResetA = new Request("http://localhost:3000/api/demo/reset", {
+        method: "POST",
+        headers: { Cookie: `paypilot_visitor_session=${tokenA}` },
+      });
+      const resResetA = await resetDemo(reqResetA);
+      expect(resResetA.status).toBe(200);
+
+      // Visitor A's goal was cleaned up
+      expect(db.getGoalById("goal_vis_a_own")).toBeUndefined();
+
+      // Shared canonical fixtures are completely UNTOUCHED
+      expect(db.getGoalById("goal_mike_2500")).toBeDefined();
+      expect(db.getGoalById("goal_sarah_1200")).toBeDefined();
+
+      // Visitor B's goal is completely UNTOUCHED
+      expect(db.getGoalById("goal_vis_b_own")).toBeDefined();
+      expect(db.getGoalById("goal_vis_b_own")?.amount).toBe(750);
+
+      // 6. Trusted Proxy IP: cf-connecting-ip and x-real-ip are trusted over arbitrary client spoofed x-forwarded-for
+      const proxyReq1 = new Request("http://localhost:3000/api/auth/session", {
+        headers: {
+          "cf-connecting-ip": "198.51.100.10",
+          "x-forwarded-for": "1.2.3.4, 5.6.7.8",
+        },
+      });
+      expect(getTrustedClientIp(proxyReq1)).toBe("198.51.100.10");
+
+      const proxyReq2 = new Request("http://localhost:3000/api/auth/session", {
+        headers: {
+          "x-real-ip": "203.0.113.45",
+          "x-forwarded-for": "10.0.0.1, 10.0.0.2",
+        },
+      });
+      expect(getTrustedClientIp(proxyReq2)).toBe("203.0.113.45");
+    } finally {
+      db.deleteGoal("goal_vis_a_own");
+      db.deleteGoal("goal_vis_b_own");
     }
   });
 });

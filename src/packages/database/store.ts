@@ -658,6 +658,68 @@ export class DatabaseStore {
     this.persistToDisk();
   }
 
+  /**
+   * Resets ONLY the simulation records belonging to a specific visitor session.
+   * Leaves shared canonical fixtures and other visitors' data completely untouched!
+   */
+  public resetVisitorRecords(visitorId: string): void {
+    if (!visitorId) return;
+
+    for (const [id, goal] of Array.from(this.goals.entries())) {
+      if (goal.visitorId === visitorId) {
+        this.goals.delete(id);
+      }
+    }
+
+    for (const [id, cust] of Array.from(this.customers.entries())) {
+      if (cust.visitorId === visitorId) {
+        this.customers.delete(id);
+      }
+    }
+
+    for (const [id, mem] of Array.from(this.memories.entries())) {
+      if (mem.visitorId === visitorId) {
+        this.memories.delete(id);
+      }
+    }
+
+    for (const [id, rec] of Array.from(this.recommendations.entries())) {
+      if (rec.visitorId === visitorId) {
+        this.recommendations.delete(id);
+      }
+    }
+
+    this.persistToDisk();
+  }
+
+  /**
+   * Clones a canonical demo fixture into a visitor-owned mutable simulation goal.
+   */
+  public cloneGoalForVisitor(canonicalGoalId: string, visitorId: string): PaymentGoal | undefined {
+    const canonical = this.goals.get(canonicalGoalId);
+    if (!canonical) return undefined;
+
+    const clonedId = `goal_vis_${canonicalGoalId}_${visitorId.slice(-6)}_${Date.now()}`;
+    const clonedGoal: PaymentGoal = {
+      ...canonical,
+      id: clonedId,
+      visitorId,
+      isDemoFixture: false,
+      isSimulated: true,
+      mode: "simulation",
+      paypalOrderId: canonical.paypalOrderId ? `SIM_ORD_${clonedId}` : undefined,
+      paypalPaymentLink: canonical.paypalPaymentLink
+        ? `/checkout/simulation?orderId=SIM_ORD_${clonedId}`
+        : undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    this.goals.set(clonedId, clonedGoal);
+    this.persistToDisk();
+    return clonedGoal;
+  }
+
   // Customers
   public getCustomers(): Customer[] {
     return Array.from(this.customers.values());

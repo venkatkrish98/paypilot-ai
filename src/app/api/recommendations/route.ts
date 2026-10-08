@@ -8,6 +8,7 @@ import {
   resolveVisitorIdentity,
   attachVisitorCookie,
   scopeRecommendationsForRequester,
+  checkRecommendationDismissalOwnership,
 } from "@/packages/security/auth";
 
 export async function GET(req: Request) {
@@ -49,7 +50,17 @@ export async function POST(req: Request) {
 
     const { id, action } = await req.json();
     if (action === "dismiss" && id) {
-      db.dismissRecommendation(id);
+      const rec = db.getRecommendationById(id);
+      if (rec) {
+        const ownership = checkRecommendationDismissalOwnership(rec, isAdmin, visitorId);
+        if (!ownership.allowed) {
+          return NextResponse.json(
+            { error: ownership.reason || "Access restricted" },
+            { status: ownership.statusCode || 403 }
+          );
+        }
+        db.dismissRecommendation(id);
+      }
     }
     const visibleRecs = scopeRecommendationsForRequester(
       db.getRecommendations(),

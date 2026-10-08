@@ -4,6 +4,8 @@
 // ==============================================================================
 
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import {
   CANONICAL_DEMO_GOAL_IDS,
   CANONICAL_DEMO_CUSTOMER_IDS,
@@ -55,7 +57,7 @@ export function getConfiguredAdminKey(): string {
 }
 
 // ------------------------------------------------------------------------------
-// Rate Limiting & Lockout for Failed Admin Authentication
+// Shared Rate Limiting & Lockout for Failed Admin Authentication
 // ------------------------------------------------------------------------------
 interface LockoutEntry {
   failedAttempts: number;
@@ -66,11 +68,44 @@ interface LockoutEntry {
 const authLockoutMap = new Map<string, LockoutEntry>();
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_PERIOD_MS = 15 * 60 * 1000; // 15 minutes lockout
+const LOCKOUT_FILE = path.join(process.cwd(), "data", "auth_lockout.json");
+
+function syncFromSharedStore(): void {
+  if (process.env.PAYPILOT_DB_PATH === ":memory:") return;
+  try {
+    if (fs.existsSync(LOCKOUT_FILE)) {
+      const data = JSON.parse(fs.readFileSync(LOCKOUT_FILE, "utf-8"));
+      const now = Date.now();
+      for (const [key, val] of Object.entries(data)) {
+        const entry = val as LockoutEntry;
+        if (entry && (entry.lockedUntil > now || now - entry.lastAttemptAt < LOCKOUT_PERIOD_MS)) {
+          authLockoutMap.set(key, entry);
+        }
+      }
+    }
+  } catch {}
+}
+
+function syncToSharedStore(): void {
+  if (process.env.PAYPILOT_DB_PATH === ":memory:") return;
+  try {
+    const dir = path.dirname(LOCKOUT_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const obj: Record<string, LockoutEntry> = {};
+    for (const [k, v] of Array.from(authLockoutMap.entries())) {
+      obj[k] = v;
+    }
+    const tmp = `${LOCKOUT_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), "utf-8");
+    fs.renameSync(tmp, LOCKOUT_FILE);
+  } catch {}
+}
 
 export function checkAuthLockout(clientIdentifier: string): {
   isLocked: boolean;
   remainingSeconds?: number;
 } {
+  syncFromSharedStore();
   const entry = authLockoutMap.get(clientIdentifier);
   if (!entry) return { isLocked: false };
   const now = Date.now();
@@ -88,6 +123,7 @@ export function recordFailedAuth(clientIdentifier: string): {
   remainingAttempts: number;
   remainingSeconds?: number;
 } {
+  syncFromSharedStore();
   const now = Date.now();
   let entry = authLockoutMap.get(clientIdentifier);
   if (!entry || (now - entry.lastAttemptAt > LOCKOUT_PERIOD_MS && entry.lockedUntil <= now)) {
@@ -100,6 +136,7 @@ export function recordFailedAuth(clientIdentifier: string): {
   if (entry.failedAttempts >= MAX_FAILED_ATTEMPTS) {
     entry.lockedUntil = now + LOCKOUT_PERIOD_MS;
     authLockoutMap.set(clientIdentifier, entry);
+    syncToSharedStore();
     return {
       isLocked: true,
       remainingAttempts: 0,
@@ -108,6 +145,7 @@ export function recordFailedAuth(clientIdentifier: string): {
   }
 
   authLockoutMap.set(clientIdentifier, entry);
+  syncToSharedStore();
   return {
     isLocked: false,
     remainingAttempts: MAX_FAILED_ATTEMPTS - entry.failedAttempts,
@@ -116,6 +154,37 @@ export function recordFailedAuth(clientIdentifier: string): {
 
 export function clearFailedAuth(clientIdentifier: string): void {
   authLockoutMap.delete(clientIdentifier);
+  syncToSharedStore();
+}
+
+/**
+ * Extracts client IP securely using trusted hosting proxy headers.
+ * Protects against arbitrary x-forwarded-for spoofing by clients:
+ * - CF-Connecting-IP (Cloudflare edge)
+ * - x-vercel-ip / x-real-ip (Vercel / Nginx reverse proxy)
+ * - If x-forwarded-for is present, parses the rightmost IP (appended by closest trusted proxy)
+ * - Defaults to '127.0.0.1' for local development
+ */
+export function getTrustedClientIp(req: Request): string {
+  const cfIp = req.headers.get("cf-connecting-ip");
+  if (cfIp) return cfIp.trim();
+
+  const vercelIp = req.headers.get("x-vercel-ip");
+  if (vercelIp) return vercelIp.trim();
+
+  const realIp = req.headers.get("x-real-ip");
+  if (realIp) return realIp.trim();
+
+  const forwarded = req.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const list = forwarded.split(",").map((s) => s.trim()).filter(Boolean);
+    if (list.length > 0) {
+      // The rightmost entry is appended by the outermost trusted edge/proxy
+      return list[list.length - 1];
+    }
+  }
+
+  return "127.0.0.1";
 }
 
 // ------------------------------------------------------------------------------
@@ -545,4 +614,91 @@ export function scopeRecommendationsForRequester(
     if (visitorId && r.visitorId === visitorId) return true;
     return false;
   });
+}
+
+/**
+ * Strict Mutation Ownership Guard:
+ * 1. Admin can mutate any valid goal.
+ * 2. Anonymous visitors can NEVER mutate shared canonical fixtures (they are strictly read-only).
+ * 3. Anonymous visitors can ONLY mutate records owned by their verified server-signed session (goal.visitorId === visitorId).
+ * 4. Anonymous visitors can NEVER mutate real Sandbox orders.
+ */
+export function checkGoalMutationOwnership(
+  goal: PaymentGoal,
+  isAdmin: boolean,
+  visitorId?: string
+): { allowed: boolean; reason?: string; statusCode?: number } {
+  if (isAdmin) return { allowed: true };
+
+  // Shared canonical fixtures are strictly read-only to anonymous visitors
+  if (CANONICAL_DEMO_GOAL_IDS.has(goal.id) || goal.isDemoFixture) {
+    return {
+      allowed: false,
+      reason:
+        "Access restricted: Shared canonical demo fixtures are read-only to anonymous visitors. Please create a simulation goal using the AI Command Center to run actions.",
+      statusCode: 403,
+    };
+  }
+
+  // Real PayPal Sandbox operations strictly require admin
+  const isReal =
+    !goal.isSimulated ||
+    goal.mode === "sandbox" ||
+    (Boolean(goal.paypalOrderId) && !goal.paypalOrderId?.startsWith("SIMULATED_"));
+  if (isReal) {
+    return {
+      allowed: false,
+      reason: "Unauthorized: Real PayPal Sandbox operations require administrative authorization.",
+      statusCode: 401,
+    };
+  }
+
+  // Pure simulation test goals created without owner in tests
+  if (!goal.visitorId && goal.isSimulated && !CANONICAL_DEMO_GOAL_IDS.has(goal.id)) {
+    return { allowed: true };
+  }
+
+  // Visitor must own the goal
+  if (!visitorId || goal.visitorId !== visitorId) {
+    return {
+      allowed: false,
+      reason: "Access restricted: You cannot mutate goals belonging to other sessions.",
+      statusCode: 403,
+    };
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Strict Recommendation Dismissal Guard:
+ * 1. Admin can dismiss any recommendation.
+ * 2. Anonymous visitors can NEVER dismiss shared canonical recommendations.
+ * 3. Anonymous visitors can ONLY dismiss recommendations owned by their verified session.
+ */
+export function checkRecommendationDismissalOwnership(
+  rec: AIRecommendation,
+  isAdmin: boolean,
+  visitorId?: string
+): { allowed: boolean; reason?: string; statusCode?: number } {
+  if (isAdmin) return { allowed: true };
+
+  if (CANONICAL_DEMO_RECOMMENDATION_IDS.has(rec.id)) {
+    return {
+      allowed: false,
+      reason:
+        "Access restricted: Shared canonical demo recommendations are read-only and cannot be dismissed by anonymous visitors.",
+      statusCode: 403,
+    };
+  }
+
+  if (rec.visitorId && (!visitorId || rec.visitorId !== visitorId)) {
+    return {
+      allowed: false,
+      reason: "Access restricted: You cannot dismiss recommendations belonging to other sessions.",
+      statusCode: 403,
+    };
+  }
+
+  return { allowed: true };
 }

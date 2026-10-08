@@ -10,6 +10,7 @@ import {
   resolveVisitorIdentity,
   attachVisitorCookie,
   scopeGoalsForRequester,
+  checkGoalMutationOwnership,
 } from "@/packages/security/auth";
 
 export async function GET(
@@ -94,28 +95,12 @@ export async function PATCH(
       return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
     }
 
-    if (!isAdmin) {
-      const isRealSandbox =
-        !existing.isSimulated ||
-        existing.mode === "sandbox" ||
-        (Boolean(existing.paypalOrderId) && !existing.paypalOrderId?.startsWith("SIMULATED_"));
-
-      if (isRealSandbox) {
-        return NextResponse.json(
-          { error: "Access restricted: Real PayPal transactions require administrative authentication." },
-          { status: 403 }
-        );
-      }
-
-      const isCanonical = CANONICAL_DEMO_GOAL_IDS.has(existing.id);
-      const isOwnGoal =
-        existing.isSimulated && (!existing.visitorId || (Boolean(visitorId) && existing.visitorId === visitorId));
-      if (!isCanonical && !isOwnGoal) {
-        return NextResponse.json(
-          { error: "Access restricted: You cannot modify goals belonging to other sessions." },
-          { status: 403 }
-        );
-      }
+    const ownership = checkGoalMutationOwnership(existing, isAdmin, visitorId);
+    if (!ownership.allowed) {
+      return NextResponse.json(
+        { error: ownership.reason || "Access restricted" },
+        { status: ownership.statusCode || 403 }
+      );
     }
 
     const body = await req.json();
