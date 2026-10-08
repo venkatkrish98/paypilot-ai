@@ -39,10 +39,39 @@ export class AIPlanner {
       try {
         this.client = new GoogleGenAI({ apiKey });
         this.hasApiKey = true;
+        // Proactively verify live connectivity in background
+        this.verifyLiveConnection().catch(() => {});
       } catch (e) {
         console.warn("Failed to initialize GoogleGenAI client:", e);
       }
     }
+  }
+
+  public async verifyLiveConnection(): Promise<boolean> {
+    if (!this.isAIAvailable() || !this.client) return false;
+    try {
+      const ping = await this.client.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: "ping",
+      });
+      if (ping) {
+        this.geminiVerified = true;
+        return true;
+      }
+    } catch {
+      // Fallback ping
+      try {
+        const ping2 = await this.client.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: "ping",
+        });
+        if (ping2) {
+          this.geminiVerified = true;
+          return true;
+        }
+      } catch {}
+    }
+    return this.geminiVerified;
   }
 
   public isAIAvailable(): boolean {
@@ -58,20 +87,22 @@ export class AIPlanner {
   }
 
   /**
-   * Extract user intent using Gemini 3.8 Flash if available, otherwise deterministic parser
+   * Extract user intent using Gemini Flash if available, otherwise deterministic parser
    */
   public async plan(userQuery: string): Promise<AIPlanningOutput> {
     // 1. Bound and sanitize input
     const boundedQuery = (userQuery || "").trim().slice(0, 500);
 
-    // 2. Try Gemini Model if key is configured
+    // 2. Try Gemini Model cascade if key is configured
     if (this.isAIAvailable() && this.client) {
-      try {
-        const response = await this.client.models.generateContent({
-          model: "gemini-3.8-flash",
-          contents: `Analyze this payment operations request: "${boundedQuery}"`,
-          config: {
-            systemInstruction: `You are the Intent and Planning Engine for PayPilot AI, a payment agent powered by PayPal.
+      const candidateModels = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash"];
+      for (const model of candidateModels) {
+        try {
+          const response = await this.client.models.generateContent({
+            model,
+            contents: `Analyze this payment operations request: "${boundedQuery}"`,
+            config: {
+              systemInstruction: `You are the Intent and Planning Engine for PayPilot AI, a payment agent powered by PayPal.
 Your job is strictly to extract structured parameters from user instructions.
 CRITICAL SAFETY RULE: You do NOT execute or authorize payments. All financial execution is performed by deterministic backend safety engines.
 
@@ -85,56 +116,57 @@ Actions:
 - "unknown": general inquiry
 
 Output MUST strictly follow the JSON schema.`,
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                action: {
-                  type: Type.STRING,
-                  enum: [
-                    "create_collection_goal",
-                    "create_payout_review",
-                    "customer_inquiry",
-                    "attention_inquiry",
-                    "followup_action",
-                    "memory_store",
-                    "unknown",
-                  ],
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  action: {
+                    type: Type.STRING,
+                    enum: [
+                      "create_collection_goal",
+                      "create_payout_review",
+                      "customer_inquiry",
+                      "attention_inquiry",
+                      "followup_action",
+                      "memory_store",
+                      "unknown",
+                    ],
+                  },
+                  customerName: { type: Type.STRING },
+                  amount: { type: Type.NUMBER },
+                  currency: { type: Type.STRING },
+                  deadline: { type: Type.STRING },
+                  purpose: { type: Type.STRING },
+                  memoryValue: { type: Type.STRING },
+                  confidence: { type: Type.NUMBER },
+                  reasoning: { type: Type.STRING },
                 },
-                customerName: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                currency: { type: Type.STRING },
-                deadline: { type: Type.STRING },
-                purpose: { type: Type.STRING },
-                memoryValue: { type: Type.STRING },
-                confidence: { type: Type.NUMBER },
-                reasoning: { type: Type.STRING },
+                required: ["action", "confidence"],
               },
-              required: ["action", "confidence"],
             },
-          },
-        });
+          });
 
-        const text = response.text;
-        if (text) {
-          const parsed = JSON.parse(text);
-          this.geminiVerified = true;
-          this.lastEngineUsed = "gemini";
-          return {
-            action: parsed.action || "unknown",
-            customerName: parsed.customerName,
-            amount: typeof parsed.amount === "number" ? parsed.amount : undefined,
-            currency: parsed.currency || "USD",
-            deadline: parsed.deadline || parseRelativeDate(boundedQuery),
-            purpose: parsed.purpose,
-            memoryValue: parsed.memoryValue,
-            confidence: parsed.confidence || 0.95,
-            reasoning: parsed.reasoning,
-            aiEngine: "gemini",
-          };
+          const text = response.text;
+          if (text) {
+            const parsed = JSON.parse(text);
+            this.geminiVerified = true;
+            this.lastEngineUsed = "gemini";
+            return {
+              action: parsed.action || "unknown",
+              customerName: parsed.customerName,
+              amount: typeof parsed.amount === "number" ? parsed.amount : undefined,
+              currency: parsed.currency || "USD",
+              deadline: parsed.deadline || parseRelativeDate(boundedQuery),
+              purpose: parsed.purpose,
+              memoryValue: parsed.memoryValue,
+              confidence: parsed.confidence || 0.95,
+              reasoning: parsed.reasoning,
+              aiEngine: "gemini",
+            };
+          }
+        } catch (error) {
+          console.warn(`Gemini (${model}) intent extraction failed, trying next candidate:`, (error as Error)?.message || error);
         }
-      } catch (error) {
-        console.warn("Gemini intent extraction failed, falling back to deterministic parser:", error);
       }
     }
 

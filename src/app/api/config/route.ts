@@ -14,8 +14,11 @@ export async function GET(req: Request) {
     ? parseFloat(process.env.PAYPILOT_REVIEW_THRESHOLD)
     : 2000;
 
-  const hasVerified = defaultAIPlanner.hasVerifiedGemini();
   const isAvailable = defaultAIPlanner.isAIAvailable();
+  let hasVerified = defaultAIPlanner.hasVerifiedGemini();
+  if (!hasVerified && isAvailable) {
+    hasVerified = await defaultAIPlanner.verifyLiveConnection();
+  }
   const hasAdminKey = Boolean(
     (process.env.PAYPILOT_ADMIN_KEY || process.env.PAYPILOT_API_KEY || "").trim()
   );
