@@ -10,6 +10,7 @@
 [![Tests Passing](https://img.shields.io/badge/Tests-46%2F46%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
 [![ESLint Passing](https://img.shields.io/badge/ESLint-Clean-brightgreen?logo=eslint)](https://eslint.org)
 [![YouTube Demo](https://img.shields.io/badge/YouTube-Demo%20Video%20(2m%2015s)-FF0000?logo=youtube&logoColor=white)](https://youtu.be/MdKWxwecdf8)
+[![Devpost Submission](https://img.shields.io/badge/Devpost-Submission-003E54?logo=devpost&logoColor=white)](https://devpost.com/software/paypilot-ai-autonomous-payment-orchestrator)
 
 ---
 
@@ -269,4 +270,4 @@ npm test
   - [x] Dual-engine AI architecture: Google Gemini 2.5 Flash / Fallback with automated deterministic fallback.
   - [x] In-UI evaluator auth workflow for testing live PayPal Sandbox execution.
   - [x] Public YouTube demo video: [Watch on YouTube (2m 15s)](https://youtu.be/MdKWxwecdf8) (Publicly visible, 1080p Full HD).
-  - [ ] Publicly hosted deployment URL (e.g. Vercel / Cloud Run).
+  - [x] Official Devpost Submission: [PayPilot AI on Devpost](https://devpost.com/software/paypilot-ai-autonomous-payment-orchestrator).
