@@ -313,7 +313,7 @@ async function main() {
 
   await send('Page.navigate', { url: 'http://localhost:3000/?tab=summary&mode=simulation' });
   await wait(2000);
-  await captureFrame('scene6_2', 0); // Broadcast Summary Takeaway view (PayPal AI Hackathon 2026 Official Submission, 4 Pillars & 46 Tests)
+  await captureFrame('scene6_2', 0); // Broadcast Summary Takeaway view (PayPal AI Hackathon 2026 Hackathon Demo, 4 Pillars & 46 Tests)
 
   ws.close();
   chrome.kill();

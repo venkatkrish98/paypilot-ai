@@ -25,7 +25,7 @@ export const SummaryTakeawayView: React.FC = () => {
           <div>
             <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-paypal-blue/20 border border-paypal-blue/40 text-sky-300 text-xs font-semibold mb-2">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>PayPal AI Hackathon 2026 Official Submission</span>
+              <span>PayPal AI Hackathon 2026 Hackathon Demo</span>
             </div>
             <h2 className="text-2xl font-black tracking-tight text-white">
               PayPilot AI &mdash; Autonomous Payment Orchestrator
