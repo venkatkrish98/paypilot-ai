@@ -9,6 +9,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38BDF8?logo=tailwind-css)](https://tailwindcss.com)
 [![Tests Passing](https://img.shields.io/badge/Tests-46%2F46%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
 [![ESLint Passing](https://img.shields.io/badge/ESLint-Clean-brightgreen?logo=eslint)](https://eslint.org)
+[![YouTube Demo](https://img.shields.io/badge/YouTube-Demo%20Video%20(2m%2015s)-FF0000?logo=youtube&logoColor=white)](https://youtu.be/MdKWxwecdf8)
 
 ---
 
@@ -267,5 +268,5 @@ npm test
   - [x] Complete automated test suite (46/46 passing) and clean production build.
   - [x] Dual-engine AI architecture: Google Gemini 2.5 Flash / Fallback with automated deterministic fallback.
   - [x] In-UI evaluator auth workflow for testing live PayPal Sandbox execution.
-  - [ ] Public YouTube demo video (must be publicly visible on YouTube, under 3 minutes per [Devpost rules](https://paypalaihackathon.devpost.com/rules)).
+  - [x] Public YouTube demo video: [Watch on YouTube (2m 15s)](https://youtu.be/MdKWxwecdf8) (Publicly visible, 1080p Full HD).
   - [ ] Publicly hosted deployment URL (e.g. Vercel / Cloud Run).
