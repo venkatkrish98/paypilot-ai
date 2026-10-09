@@ -13,6 +13,7 @@ import { CustomersView } from "@/components/CustomersView";
 import { MemoryView } from "@/components/MemoryView";
 import { ActivityView } from "@/components/ActivityView";
 import { SettingsView } from "@/components/SettingsView";
+import { SummaryTakeawayView } from "@/components/SummaryTakeawayView";
 import { AIRecommendationsCard } from "@/components/AIRecommendationsCard";
 import { AdminAuthModal } from "@/components/AdminAuthModal";
 import { PaymentGoal, AIRecommendation, ExecutionMode, DashboardMetrics } from "@/packages/types";
@@ -80,6 +81,7 @@ export default function Home() {
         "activity",
         "memory",
         "settings",
+        "summary",
       ].includes(tabParam)
     ) {
       setCurrentTab(tabParam);
@@ -529,6 +531,8 @@ export default function Home() {
         {currentTab === "memory" && <MemoryView />}
 
         {currentTab === "settings" && <SettingsView />}
+
+        {currentTab === "summary" && <SummaryTakeawayView />}
 
         {/* Global Accessible Detail Modal */}
         <PaymentDetailModal

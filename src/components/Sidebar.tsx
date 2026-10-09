@@ -27,7 +27,8 @@ export type NavTab =
   | "approvals"
   | "activity"
   | "memory"
-  | "settings";
+  | "settings"
+  | "summary";
 
 interface SidebarProps {
   currentTab: NavTab;
@@ -68,6 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: "activity" as NavTab, label: "Activity Timeline", icon: Clock },
     { id: "memory" as NavTab, label: "Memory & Rules", icon: Brain },
     { id: "settings" as NavTab, label: "Settings & Config", icon: Settings },
+    { id: "summary" as NavTab, label: "Project Takeaway", icon: Sparkles },
   ];
 
   return (
