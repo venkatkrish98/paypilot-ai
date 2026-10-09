@@ -92,7 +92,7 @@ export const AgentCommandCenter: React.FC<AgentCommandCenterProps> = ({
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, mode }),
       });
 
       if (!res.ok) {
@@ -152,7 +152,11 @@ export const AgentCommandCenter: React.FC<AgentCommandCenterProps> = ({
           {
             id: `appr_${Date.now()}`,
             sender: "agent",
-            text: `Payment disbursement of $${data.goal.amount.toLocaleString()} approved. Order \`${data.goal.paypalOrderId}\` (${data.isSimulated ? "Simulation" : "PayPal Sandbox"}) generated.`,
+            text:
+              data.message ||
+              (data.goal.goalType === "payout_review"
+                ? `Vendor disbursement of $${data.goal.amount.toLocaleString()} for ${data.goal.customer || "vendor"} approved for review (Simulation Only — No Payout Dispatched).`
+                : `Payment collection goal approved for ${data.goal.customer || "customer"}.${data.goal.paypalOrderId ? ` Order \`${data.goal.paypalOrderId}\` generated.` : ""}`),
             goal: data.goal,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             isSimulated: data.isSimulated,
@@ -279,7 +283,7 @@ export const AgentCommandCenter: React.FC<AgentCommandCenterProps> = ({
                         Agent Capability Execution Chain{" "}
                         {msg.aiEngine && (
                           <span className="font-mono text-[8px] text-slate-400">
-                            ({msg.aiEngine === "gemini" ? "Google Gemini 3.8 Flash" : "Deterministic Fallback"})
+                            ({msg.aiEngine === "gemini" ? "Google Gemini 2.5 Flash" : "Deterministic Fallback"})
                           </span>
                         )}
                       </span>

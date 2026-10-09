@@ -14,6 +14,7 @@ interface GoalsTableProps {
   goals: PaymentGoal[];
   onOpenDetails: (goal: PaymentGoal) => void;
   onSimulatePayment: (goalId: string) => void;
+  onOpenSimulationCheckout?: (goal: PaymentGoal) => void;
   onApproveGoal: (goalId: string) => void;
   initialFilter?: string;
   isLoading?: boolean;
@@ -23,6 +24,7 @@ export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
   goals,
   onOpenDetails,
   onSimulatePayment,
+  onOpenSimulationCheckout,
   onApproveGoal,
   initialFilter = "all",
   isLoading = false,
@@ -236,7 +238,13 @@ export const PaymentGoalsTable: React.FC<GoalsTableProps> = ({
                     </button>
                   ) : g.status === "awaiting_payment" ? (
                     <button
-                      onClick={() => onSimulatePayment(g.id)}
+                      onClick={() => {
+                        if (g.isSimulated && onOpenSimulationCheckout) {
+                          onOpenSimulationCheckout(g);
+                        } else {
+                          onSimulatePayment(g.id);
+                        }
+                      }}
                       className="flex-1 py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-2xs transition text-center whitespace-nowrap"
                     >
                       {g.isSimulated ? "Simulate Pay" : "Capture Pay"}

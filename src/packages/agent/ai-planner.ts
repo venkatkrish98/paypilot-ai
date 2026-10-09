@@ -1,5 +1,5 @@
 // ==============================================================================
-// PayPilot AI - AI Intent & Planning Engine (Google Gemini 3.8 Flash / Fallback)
+// PayPilot AI - AI Intent & Planning Engine (Google Gemini 2.5 Flash / Fallback)
 // Structured intent extraction with deterministic fallback and bounded inputs
 // ==============================================================================
 
@@ -51,7 +51,7 @@ export class AIPlanner {
     if (!this.isAIAvailable() || !this.client) return false;
     try {
       const ping = await this.client.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-2.5-flash",
         contents: "ping",
       });
       if (ping) {
@@ -62,7 +62,7 @@ export class AIPlanner {
       // Fallback ping
       try {
         const ping2 = await this.client.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-2.0-flash",
           contents: "ping",
         });
         if (ping2) {
@@ -95,7 +95,7 @@ export class AIPlanner {
 
     // 2. Try Gemini Model cascade if key is configured
     if (this.isAIAvailable() && this.client) {
-      const candidateModels = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash"];
+      const candidateModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
       for (const model of candidateModels) {
         try {
           const response = await this.client.models.generateContent({

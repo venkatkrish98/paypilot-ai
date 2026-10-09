@@ -103,9 +103,12 @@ export default function Home() {
 
   const refreshAuthAndConfig = async () => {
     try {
+      const p = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const requestedMode = p?.get("mode");
+      const configUrl = requestedMode ? `/api/config?mode=${requestedMode}` : "/api/config";
       const [sessionRes, configRes] = await Promise.all([
         fetch("/api/auth/session"),
-        fetch("/api/config"),
+        fetch(configUrl),
       ]);
       const sessionData = await sessionRes.json();
       const configData = await configRes.json();
@@ -238,7 +241,11 @@ export default function Home() {
         setSelectedGoal(data.goal);
         setGlobalNotice({
           type: "success",
-          message: `Disbursement approved! Order ${data.goal.paypalOrderId} generated.`,
+          message:
+            data.message ||
+            (data.goal.goalType === "payout_review"
+              ? `Review approved for ${data.goal.customer}! Safety sign-off recorded (Simulation Only — No Payout Dispatched).`
+              : `Collection goal approved for ${data.goal.customer}!${data.goal.paypalOrderId ? ` Order ${data.goal.paypalOrderId} created.` : ""}`),
         });
         setTimeout(() => setGlobalNotice(null), 3500);
         fetchData();
@@ -457,6 +464,10 @@ export default function Home() {
                   isLoading={isLoadingData}
                   onOpenDetails={(g) => setSelectedGoal(g)}
                   onSimulatePayment={handleSimulatePayment}
+                  onOpenSimulationCheckout={(goal) => {
+                    setSimulationGoal(goal);
+                    setIsSimModalOpen(true);
+                  }}
                   onApproveGoal={handleApproveGoal}
                 />
               </div>
@@ -503,6 +514,10 @@ export default function Home() {
               goals={goals}
               onOpenDetails={(g) => setSelectedGoal(g)}
               onSimulatePayment={handleSimulatePayment}
+              onOpenSimulationCheckout={(goal) => {
+                setSimulationGoal(goal);
+                setIsSimModalOpen(true);
+              }}
               onApproveGoal={handleApproveGoal}
             />
           </div>

@@ -620,7 +620,6 @@ export class DatabaseStore {
 
     for (const goal of Array.from(this.goals.values())) {
       // If it is NOT one of the 4 canonical fixtures and NOT explicitly marked isDemoFixture === true, preserve it!
-      // This preserves user goals with legacy or arbitrary IDs.
       if (!CANONICAL_GOAL_IDS.has(goal.id) && goal.isDemoFixture !== true) {
         nonDemoUserGoals.push(goal);
       }

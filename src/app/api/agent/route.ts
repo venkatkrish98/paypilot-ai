@@ -12,7 +12,16 @@ export async function POST(req: Request) {
   try {
     const isAdmin = isRequestAdmin(req);
     const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
-    const isSimulationOnly = !isAdmin || !defaultPayPalClient.isConfigured();
+
+    const body = await req.json();
+    const query = body?.query || body?.message || body?.goal;
+
+    if (!query || typeof query !== "string") {
+      return NextResponse.json({ error: "Query is required" }, { status: 400 });
+    }
+
+    const requestedSimulation = body?.mode === "simulation" || body?.isSimulationOnly === true;
+    const isSimulationOnly = requestedSimulation || !isAdmin || !defaultPayPalClient.isConfigured();
 
     const auth = checkWriteAuthorization(req, {
       isSimulated: isSimulationOnly,
@@ -20,13 +29,6 @@ export async function POST(req: Request) {
     });
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.reason || "Unauthorized" }, { status: auth.statusCode || 401 });
-    }
-
-    const body = await req.json();
-    const query = body?.query || body?.message || body?.goal;
-
-    if (!query || typeof query !== "string") {
-      return NextResponse.json({ error: "Query is required" }, { status: 400 });
     }
 
     const result = await defaultOrchestrator.execute(query, {

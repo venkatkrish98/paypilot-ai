@@ -190,3 +190,36 @@ export async function PATCH(
     );
   }
 }
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const isAdmin = isRequestAdmin(req);
+    const { visitorId, newCookieToken } = resolveVisitorIdentity(req);
+    const goal = db.getGoalById(params.id);
+    if (!goal) {
+      return NextResponse.json({ error: "Goal not found" }, { status: 404 });
+    }
+
+    const ownership = checkGoalMutationOwnership(goal, isAdmin, visitorId);
+    if (!ownership.allowed) {
+      return NextResponse.json(
+        { error: ownership.reason || "Access restricted" },
+        { status: ownership.statusCode || 403 }
+      );
+    }
+
+    const deleted = db.deleteGoal(params.id);
+    const visibleGoals = scopeGoalsForRequester(db.getGoals(), isAdmin, visitorId);
+    const response = NextResponse.json({ success: deleted, metrics: db.getMetrics(visibleGoals) });
+    return attachVisitorCookie(response, newCookieToken, isAdmin);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error deleting goal" },
+      { status: 500 }
+    );
+  }
+}
+

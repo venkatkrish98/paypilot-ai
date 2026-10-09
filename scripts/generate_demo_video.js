@@ -174,31 +174,48 @@ async function main() {
     console.log('✓ Admin session cookie injected into Chrome CDP session');
   }
 
-  // STEP A: Reset Database to Pristine Canonical Seed (with Mike pending approval)
+  // STEP A: Reset Database to Pristine Canonical Seed and Prune Old Test Goals
   console.log('\nResetting demo database to canonical fixtures...');
   await fetch('http://localhost:3000/api/demo/reset', {
     method: 'POST',
     headers: adminCookieVal ? { 'Cookie': `paypilot_admin_session=${adminCookieVal}` } : {}
   });
-  await wait(1500);
+  await wait(1000);
+
+  // Prune any legacy test goals and delete goal_sarah_1200 so Sarah's goal is created dynamically by the agent
+  console.log('Pruning legacy goals and preparing single unified Sarah workflow...');
+  const goalsRes = await fetch('http://localhost:3000/api/goals', {
+    headers: adminCookieVal ? { 'Cookie': `paypilot_admin_session=${adminCookieVal}` } : {}
+  });
+  const goalsData = await goalsRes.json();
+  const canonicalKeepIds = new Set(['goal_john_850', 'goal_mike_2500', 'goal_acme_600']);
+  for (const g of (goalsData.goals || [])) {
+    if (!canonicalKeepIds.has(g.id)) {
+      await fetch(`http://localhost:3000/api/goals/${g.id}`, {
+        method: 'DELETE',
+        headers: adminCookieVal ? { 'Cookie': `paypilot_admin_session=${adminCookieVal}` } : {}
+      });
+    }
+  }
+  await wait(1000);
 
   // === SCENE 1: Problem Overview (Dashboard Top & KPIs) ===
   console.log('\n--- Capturing Scene 1: Problem & Cockpit Top ---');
-  await send('Page.navigate', { url: 'http://localhost:3000/?tab=dashboard' });
+  await send('Page.navigate', { url: 'http://localhost:3000/?tab=dashboard&mode=simulation' });
   await wait(2500);
   await captureFrame('scene1_1', 0); // Hero header & Walkthrough banner
-  await captureFrame('scene1_2', 0); // Metric cards & Recommendations (Needs Attention: 1 Sign-off!)
+  await captureFrame('scene1_2', 0); // Metric cards & Recommendations (Sarah $1,200 overdue recommendation, Attention: 1 Sign-off)
 
   // === SCENE 2: Introducing PayPilot AI (Goals & Overview) ===
   console.log('\n--- Capturing Scene 2: Active Goals & Cockpit ---');
   await captureFrame('scene2_1', 0); // Walkthrough banner & Overview
-  await send('Page.navigate', { url: 'http://localhost:3000/?tab=goals' });
+  await send('Page.navigate', { url: 'http://localhost:3000/?tab=goals&mode=simulation' });
   await wait(1800);
-  await captureFrame('scene2_2', 0); // Active goals table showing all 4 goals cleanly at scrollY: 0
+  await captureFrame('scene2_2', 0); // Active goals table showing exactly 3 clean canonical goals (John Paid, Mike Review, Acme Awaiting)
 
   // === SCENE 3: Hero Multi-Agent Workflow (AI Command Center) ===
   console.log('\n--- Capturing Scene 3: AI Command Center Execution ---');
-  await send('Page.navigate', { url: 'http://localhost:3000/?tab=agent' });
+  await send('Page.navigate', { url: 'http://localhost:3000/?tab=agent&mode=simulation' });
   await wait(2000);
   await captureFrame('scene3_1', 0); // Command Center Initial 2-column view
 
@@ -216,7 +233,7 @@ async function main() {
   await captureFrame('scene3_2', 0); // Typed prompt
 
   // Dispatch Send
-  console.log('Submitting prompt to Gemini / Multi-Agent orchestrator...');
+  console.log('Submitting prompt to Gemini / Multi-Agent orchestrator in simulation mode...');
   await evalJs(`
     const btn = document.querySelector('button[aria-label="Send message"]') || document.querySelector('form button[type="submit"]') || Array.from(document.querySelectorAll('button')).find(b => b.querySelector('svg.lucide-send') || b.textContent.includes('Send'));
     if (btn) btn.click();
@@ -225,13 +242,13 @@ async function main() {
       if (input) input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
     }
   `);
-  await wait(5500); // wait for agent response
-  await captureFrame('scene3_3', 0); // Full agent response with Order ID & safety checks
+  await wait(6000); // wait for agent response
+  await captureFrame('scene3_3', 0); // Full agent response with Simulated Order ID & safety checks
 
-  // Switch to Goals view to show newly created goal clearly at scrollY: 0
-  await send('Page.navigate', { url: 'http://localhost:3000/?tab=goals' });
+  // Switch to Goals view to show newly created Sarah goal cleanly at scrollY: 0
+  await send('Page.navigate', { url: 'http://localhost:3000/?tab=goals&mode=simulation' });
   await wait(2000);
-  await captureFrame('scene3_4', 0); // Goals table showing Sarah's goal awaiting payment
+  await captureFrame('scene3_4', 0); // Goals table showing Sarah's goal awaiting payment (single clean Sarah entry)
 
   // === SCENE 4: Instant Checkout & Real-Time Payment Capture ===
   console.log('\n--- Capturing Scene 4: Checkout & Payment Capture ---');
@@ -243,27 +260,36 @@ async function main() {
   `);
   await wait(1800);
   await captureFrame('scene4_1', 0); // Simulation Checkout Modal open with Truthful Simulation disclosures
+  await wait(500);
 
-  // Click Confirm & Capture Payment in modal
-  console.log('Clicking Confirm & Capture Payment...');
+  // Click Simulate Customer Approval & Capture in modal
+  console.log('Clicking Simulate Customer Approval & Capture...');
   await evalJs(`
-    const captureBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Confirm & Capture') || b.textContent.includes('Capture Payment'));
+    const captureBtn = Array.from(document.querySelectorAll('button')).find(b => 
+      b.textContent.includes('Approval & Capture') || 
+      b.textContent.includes('Confirm & Capture') || 
+      b.textContent.includes('Capture Payment')
+    );
     if (captureBtn) captureBtn.click();
   `);
-  await wait(2500);
+  await wait(2000);
   await captureFrame('scene4_2', 0); // Payment captured notification & toast
 
-  // Close modal to see updated ledger & status
+  // Close any open detail modal so scene4_3 clearly displays the un-occluded Goals table
   await evalJs(`
-    const closeBtn = document.querySelector('button[aria-label="Close"]') || Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Close') || b.querySelector('.lucide-x'));
-    if (closeBtn) closeBtn.click();
+    const closeBtns = Array.from(document.querySelectorAll('button')).filter(b => 
+      b.textContent.trim() === 'Close' || 
+      b.querySelector('svg.lucide-x') || 
+      b.getAttribute('aria-label')?.includes('Close')
+    );
+    if (closeBtns.length > 0) closeBtns[closeBtns.length - 1].click();
   `);
-  await wait(1500);
-  await captureFrame('scene4_3', 0); // Goals table showing green Simulated Paid badge
+  await wait(1200);
+  await captureFrame('scene4_3', 0); // Goals table showing green Simulated Paid badge cleanly
 
   // === SCENE 5: Risk Engine & Dual-Authorization Review ===
   console.log('\n--- Capturing Scene 5: Approvals Queue & Sign-Off ---');
-  await send('Page.navigate', { url: 'http://localhost:3000/?tab=approvals' });
+  await send('Page.navigate', { url: 'http://localhost:3000/?tab=approvals&mode=simulation' });
   await wait(2000);
   await captureFrame('scene5_1', 0); // Approvals Queue showing Mike Reynolds $2,500 pending + Dual-Auth sidebar
 
@@ -277,17 +303,17 @@ async function main() {
     if (approveBtn) approveBtn.click();
   `);
   await wait(2500);
-  await captureFrame('scene5_3', 0); // Sign-off recorded, queue cleared with All Clear
+  await captureFrame('scene5_3', 0); // Sign-off recorded, truthful review approval message, queue cleared with All Clear
 
   // === SCENE 6: Architecture Takeaways & Conclusion ===
   console.log('\n--- Capturing Scene 6: Settings & Closing Summary ---');
-  await send('Page.navigate', { url: 'http://localhost:3000/?tab=settings' });
+  await send('Page.navigate', { url: 'http://localhost:3000/?tab=settings&mode=simulation' });
   await wait(2000);
-  await captureFrame('scene6_1', 0); // Settings & Config with PayPal Orders v2 & Zero-Trust Security Architecture
+  await captureFrame('scene6_1', 0); // Settings & Config with Google Gemini 2.5 Flash / Fallback & PayPal Orders v2 schema
 
-  await send('Page.navigate', { url: 'http://localhost:3000/?tab=summary' });
+  await send('Page.navigate', { url: 'http://localhost:3000/?tab=summary&mode=simulation' });
   await wait(2000);
-  await captureFrame('scene6_2', 0); // Broadcast Summary Takeaway view (4 Pillars & 46 Tests)
+  await captureFrame('scene6_2', 0); // Broadcast Summary Takeaway view (PayPal AI Hackathon 2026 Official Submission, 4 Pillars & 46 Tests)
 
   ws.close();
   chrome.kill();

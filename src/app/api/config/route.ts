@@ -6,9 +6,15 @@ import { SafeSystemConfig } from "@/packages/types";
 import { isRequestAdmin } from "@/packages/security/auth";
 
 export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const requestedMode = url.searchParams.get("mode");
   const isConfigured = defaultPayPalClient.isConfigured();
   const isAdmin = isRequestAdmin(req);
-  const effectiveMode = (isConfigured && isAdmin) ? "sandbox" : "simulation";
+  const effectiveMode = requestedMode === "simulation"
+    ? "simulation"
+    : requestedMode === "sandbox"
+    ? "sandbox"
+    : (isConfigured && isAdmin) ? "sandbox" : "simulation";
 
   const envThreshold = process.env.PAYPILOT_REVIEW_THRESHOLD
     ? parseFloat(process.env.PAYPILOT_REVIEW_THRESHOLD)
@@ -41,9 +47,9 @@ export async function GET(req: Request) {
     reviewThreshold: envThreshold,
     storageType: "local_durable_file",
     aiProvider: hasVerified
-      ? "Google Gemini 3.8 Flash (Verified Live)"
+      ? "Google Gemini 2.5 Flash (Verified Live)"
       : isAvailable
-      ? "Google Gemini 3.8 Flash (Configured, Fallback Ready)"
+      ? "Google Gemini 2.5 Flash (Configured, Fallback Ready)"
       : "Deterministic NLP Parser (Offline / Verified Fallback)",
     geminiLiveVerified: hasVerified,
     environmentEnforced: "sandbox",
@@ -51,7 +57,7 @@ export async function GET(req: Request) {
     protectionPolicy,
     demoMode: !demoModeDisabled,
     adminAuthenticated: isAdmin,
-    canExecuteSandbox: isConfigured && isAdmin,
+    canExecuteSandbox: effectiveMode === "sandbox" && isConfigured && isAdmin,
   };
 
   return NextResponse.json(config);
