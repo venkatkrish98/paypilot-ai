@@ -7,7 +7,7 @@
 [![Next.js 14](https://img.shields.io/badge/Next.js-14.2%20App%20Router-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38BDF8?logo=tailwind-css)](https://tailwindcss.com)
-[![Tests Passing](https://img.shields.io/badge/Tests-37%2F37%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
+[![Tests Passing](https://img.shields.io/badge/Tests-46%2F46%20Passing-brightgreen?logo=vitest)](https://vitest.dev)
 [![ESLint Passing](https://img.shields.io/badge/ESLint-Clean-brightgreen?logo=eslint)](https://eslint.org)
 
 ---
@@ -83,7 +83,7 @@ Most AI fintech implementations are **conversational wrappers**—they summarize
 
 ## Real AI Intent & Planning Engine
 
-PayPilot AI integrates **Google Gemini 3.8 Flash** via `@google/genai` for structured intent extraction:
+PayPilot AI integrates **Google Gemini 2.5 Flash / Fallback** via `@google/genai` for structured intent extraction:
 - **Bounded Inputs:** Queries are bounded to 500 characters and sanitized.
 - **Strict JSON Schema:** Emits structured parameters: `action`, `amount`, `currency`, `customerName`, `deadline`, `purpose`.
 - **Verified Deterministic Fallback:** When `GEMINI_API_KEY` is not present or network fails, PayPilot falls back to its deterministic rule-based NLP parser.
@@ -245,7 +245,7 @@ npm test
 37. `Canonical fixture scoping & metric integrity` — Enforces exact canonical ID sets (`CANONICAL_DEMO_GOAL_IDS`, etc.) for public demo; metrics are calculated strictly over scoped records.
 38. `Canonical fixture sandbox protection` — Real PayPal Sandbox orders are never exposed merely because their ID is in the canonical fixture set.
 39. `Strong session secret production enforcement` — Rejects missing or weak session secrets in production environments.
-40. `Gemini live verification reporting` — Discloses live verification status of `gemini-3.8-flash` truthfully only after confirmed live execution.
+40. `Gemini live verification reporting` — Discloses live verification status of `gemini-2.5-flash` truthfully only after confirmed live execution.
 41. `Server-signed visitor tokens & anti-spoofing` — Rejects spoofed visitor ID headers and forged cookies.
 42. `Multi-session isolation & proxy IP integrity` — Dual visitor isolation, read-only canonical fixtures, scoped reset, and trusted proxy header resolution.
 43. `Production unowned record block & RFC IP validation` — Rejects orphaned/unowned records in production and strictly validates IPv4/IPv6 format with Node `net.isIP`.
@@ -265,7 +265,7 @@ npm test
 - **Required Submission Evidence (Owner Checklist):**
   - [x] Public GitHub repository with open-source MIT license (`https://github.com/venkatkrish98/paypilot-ai`).
   - [x] Complete automated test suite (46/46 passing) and clean production build.
-  - [x] Dual-engine AI architecture: Google Gemini 3.8 Flash with automated deterministic fallback.
+  - [x] Dual-engine AI architecture: Google Gemini 2.5 Flash / Fallback with automated deterministic fallback.
   - [x] In-UI evaluator auth workflow for testing live PayPal Sandbox execution.
   - [ ] Public YouTube demo video (must be publicly visible on YouTube, under 3 minutes per [Devpost rules](https://paypalaihackathon.devpost.com/rules)).
   - [ ] Publicly hosted deployment URL (e.g. Vercel / Cloud Run).
