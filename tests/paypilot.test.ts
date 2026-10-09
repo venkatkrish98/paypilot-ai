@@ -2216,6 +2216,11 @@ describe("PayPilot AI Test Suite", () => {
     const testIp = "203.0.113.88";
 
     try {
+      if (fs.existsSync(testLockoutFile)) {
+        try { fs.unlinkSync(testLockoutFile); } catch {}
+      }
+      clearFailedAuth(testIp);
+
       // 1. Record 3 failed attempts
       recordFailedAuth(testIp);
       recordFailedAuth(testIp);

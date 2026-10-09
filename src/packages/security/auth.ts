@@ -157,9 +157,7 @@ function syncToSharedStore(deletedKey?: string): void {
       }
     }
 
-    const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
-    fs.writeFileSync(tmp, JSON.stringify(diskSnapshot, null, 2), "utf-8");
-    fs.renameSync(tmp, filePath);
+    fs.writeFileSync(filePath, JSON.stringify(diskSnapshot, null, 2), "utf-8");
   } catch {}
 }
 

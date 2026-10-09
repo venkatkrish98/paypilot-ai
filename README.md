@@ -97,6 +97,7 @@ PayPilot AI integrates **Google Gemini 2.5 Flash / Fallback** via `@google/genai
 
 PayPilot AI interacts directly with the **PayPal Developer Platform**:
 
+- **Live Sandbox Verification Report:** [PAYPAL_SANDBOX_VERIFICATION.md](./PAYPAL_SANDBOX_VERIFICATION.md) — Documented end-to-end trace of live order creation, buyer approval, and capture (`COMPLETED`, Order `3S392763XY946002Y`, Capture `7R564538EN5935120`, $12.00 USD).
 - **OAuth 2.0 Client Credentials Authentication:**  
   `POST https://api-m.sandbox.paypal.com/v1/oauth2/token`
 - **Orders v2 Order Creation:**  
@@ -271,3 +272,4 @@ npm test
   - [x] In-UI evaluator auth workflow for testing live PayPal Sandbox execution.
   - [x] Public YouTube demo video: [Watch on YouTube (2m 15s)](https://youtu.be/MdKWxwecdf8) (Publicly visible, 1080p Full HD).
   - [x] Official Devpost Submission: [PayPilot AI on Devpost](https://devpost.com/software/paypilot-ai-autonomous-payment-orchestrator).
+  - [x] Official Live PayPal Sandbox Capture Verification: [PAYPAL_SANDBOX_VERIFICATION.md](./PAYPAL_SANDBOX_VERIFICATION.md) (Captured on `api-m.sandbox.paypal.com` with Capture ID `7R564538EN5935120`).
