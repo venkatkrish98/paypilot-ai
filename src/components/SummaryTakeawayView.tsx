@@ -56,7 +56,7 @@ export const SummaryTakeawayView: React.FC = () => {
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Multi-Agent Planning</h3>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Google Gemini 3.8 Flash</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Google Gemini 2.5 Flash / Fallback</p>
           </div>
           <ul className="text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
             <li className="flex items-start space-x-1.5">

@@ -195,10 +195,10 @@ export const AgentCommandCenter: React.FC<AgentCommandCenterProps> = ({
     }
   };
 
-  return (
+  const chatCard = (
     <div
       className={`flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden ${
-        compact ? "h-[500px]" : "h-[720px]"
+        compact ? "h-[500px]" : "h-[700px]"
       }`}
       role="region"
       aria-label="AI Payment Agent Chat"
@@ -480,6 +480,100 @@ export const AgentCommandCenter: React.FC<AgentCommandCenterProps> = ({
             <Send className="w-3.5 h-3.5" />
           </button>
         </form>
+      </div>
+    </div>
+  );
+
+  if (compact) {
+    return chatCard;
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 w-full">
+      <div className="lg:col-span-8">{chatCard}</div>
+
+      <div className="lg:col-span-4 space-y-4">
+        {/* Card 1: Orchestration Stack */}
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
+          <div className="flex items-center space-x-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+            <div className="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-500/15 text-paypal-blue dark:text-sky-300 flex items-center justify-center">
+              <Sparkles className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 dark:text-white">Multi-Agent Orchestration</h4>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">Gemini 2.5 Flash + PayPal Engine</p>
+            </div>
+          </div>
+
+          <div className="space-y-2 text-[11px]">
+            <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5">
+              <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                <span>1. Goal &amp; Intent Parser</span>
+                <span className="text-[9px] text-sky-500 font-mono">Gemini 2.5</span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                Extracts counterparty, amount, currency, and deadline from natural language.
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5">
+              <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                <span>2. Safety &amp; Risk Evaluator</span>
+                <span className="text-[9px] text-emerald-500 font-mono">$2,000 Cap</span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                Validates transaction boundaries, new vendor flags, and 24h duplicate velocity.
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5">
+              <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                <span>3. PayPal Orders v2 Engine</span>
+                <span className="text-[9px] text-purple-500 font-mono">REST v2</span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                Generates valid Orders v2 schemas with checkout links and instant capture.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: Interactive Prompts */}
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-2.5">
+          <div className="flex items-center space-x-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+            <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-500/15 text-purple-600 dark:text-purple-300 flex items-center justify-center">
+              <Bot className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 dark:text-white">Quick Test Scenarios</h4>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400">Click to run immediately</p>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            {quickPrompts.slice(0, 4).map((prompt, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSend(prompt)}
+                disabled={isLoading}
+                className="w-full text-left p-2 rounded-lg bg-slate-50 hover:bg-sky-50 dark:bg-slate-950 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-700 dark:text-slate-300 hover:text-paypal-blue dark:hover:text-sky-300 transition flex items-center justify-between group disabled:opacity-50"
+              >
+                <span className="truncate pr-2">{prompt}</span>
+                <ArrowRight className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-paypal-blue dark:text-sky-400" />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Card 3: Security & Verification Badge */}
+        <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between text-[11px]">
+          <div className="flex items-center space-x-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="text-slate-600 dark:text-slate-300 font-medium">Dual-Auth Gate: $2,000 USD</span>
+          </div>
+          <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Active</span>
+        </div>
       </div>
     </div>
   );
