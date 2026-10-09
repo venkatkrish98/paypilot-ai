@@ -32,7 +32,7 @@ export const SummaryTakeawayView: React.FC = () => {
             </h2>
             <p className="text-sm text-slate-300 mt-1 max-w-2xl">
               Transforming traditional commerce into proactive, goal-driven financial intelligence.
-              From conversational goal to verified PayPal Orders v2 execution in seconds.
+              From conversational goal to compliant PayPal Orders v2 schema simulation in seconds.
             </p>
           </div>
 
@@ -81,20 +81,20 @@ export const SummaryTakeawayView: React.FC = () => {
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">PayPal Integration</h3>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Official Orders v2 API</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Orders v2 API Architecture</p>
           </div>
           <ul className="text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
             <li className="flex items-start space-x-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-              <span>Live PayPal Sandbox checkout</span>
+              <span>Orders v2 API schema compliance</span>
             </li>
             <li className="flex items-start space-x-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-              <span>Deterministic offline simulation</span>
+              <span>Deterministic in-app simulation</span>
             </li>
             <li className="flex items-start space-x-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-              <span>Immediate buyer checkout links</span>
+              <span>Sandbox-ready dual-engine architecture</span>
             </li>
           </ul>
         </div>
@@ -136,7 +136,7 @@ export const SummaryTakeawayView: React.FC = () => {
           <ul className="text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
             <li className="flex items-start space-x-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
-              <span>Real-time payment capture</span>
+              <span>Simulated buyer approval & capture</span>
             </li>
             <li className="flex items-start space-x-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />

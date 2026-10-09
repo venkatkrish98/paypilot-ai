@@ -9,7 +9,10 @@ export const SettingsView: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    fetch("/api/config")
+    const p = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const requestedMode = p?.get("mode");
+    const configUrl = requestedMode ? `/api/config?mode=${requestedMode}` : "/api/config";
+    fetch(configUrl)
       .then((r) => r.json())
       .then((data) => setConfig(data))
       .catch((e) => console.error("Error loading config:", e))
@@ -41,7 +44,11 @@ export const SettingsView: React.FC = () => {
             </div>
           </div>
 
-          {config?.canExecuteSandbox ? (
+          {config?.mode === "simulation" ? (
+            <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/15 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-500/30 flex items-center space-x-1">
+              <span>Simulation Mode (Orders v2 Sandbox-Ready)</span>
+            </span>
+          ) : config?.canExecuteSandbox ? (
             <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 flex items-center space-x-1">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
               <span>Live Sandbox Active (Admin Authorized)</span>
@@ -63,7 +70,9 @@ export const SettingsView: React.FC = () => {
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-800 dark:text-slate-200">Execution Mode:</span>
               <span className="font-mono text-slate-600 dark:text-slate-400 uppercase font-bold text-[11px]">
-                {config?.canExecuteSandbox
+                {config?.mode === "simulation"
+                  ? "SIMULATION (ORDERS V2 SCHEMA COMPLIANT)"
+                  : config?.canExecuteSandbox
                   ? "SANDBOX (LIVE ORDERS V2)"
                   : config?.paypalConfigured
                   ? "SIMULATION (SANDBOX CREDENTIALS GATED)"
@@ -71,7 +80,9 @@ export const SettingsView: React.FC = () => {
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              {config?.canExecuteSandbox
+              {config?.mode === "simulation"
+                ? "PayPilot operates in Truthful Simulation Mode with deterministic state transitions, mock orders, and full PayPal Orders v2 schema adherence with zero downtime."
+                : config?.canExecuteSandbox
                 ? "PayPal Client ID & Secret verified. Evaluator admin session is authenticated: live PayPal Orders v2 sandbox orders, buyer approvals, and captures execute directly on api-m.sandbox.paypal.com."
                 : config?.paypalConfigured
                 ? "PayPal sandbox credentials (Client ID & Secret) are present in server environment, but this session is unauthenticated. To safeguard public demo usage, live sandbox order creation requires unlocking Admin mode via the top header passkey."

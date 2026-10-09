@@ -203,15 +203,15 @@ async function main() {
   console.log('\n--- Capturing Scene 1: Problem & Cockpit Top ---');
   await send('Page.navigate', { url: 'http://localhost:3000/?tab=dashboard&mode=simulation' });
   await wait(2500);
-  await captureFrame('scene1_1', 0); // Hero header & Walkthrough banner
-  await captureFrame('scene1_2', 0); // Metric cards & Recommendations (Sarah $1,200 overdue recommendation, Attention: 1 Sign-off)
+  await captureFrame('scene1_1', 0); // Hero header & Metric KPI cards
+  await captureFrame('scene1_2', 320); // Scrolled to Recommendations (Sarah $1,200 overdue recommendation, Attention: 1 Sign-off)
 
   // === SCENE 2: Introducing PayPilot AI (Goals & Overview) ===
   console.log('\n--- Capturing Scene 2: Active Goals & Cockpit ---');
-  await captureFrame('scene2_1', 0); // Walkthrough banner & Overview
   await send('Page.navigate', { url: 'http://localhost:3000/?tab=goals&mode=simulation' });
-  await wait(1800);
-  await captureFrame('scene2_2', 0); // Active goals table showing exactly 3 clean canonical goals (John Paid, Mike Review, Acme Awaiting)
+  await wait(2000);
+  await captureFrame('scene2_1', 0); // Goals header & filter counters
+  await captureFrame('scene2_2', 140); // Active goals table showing exactly 3 clean canonical goals (John Paid, Mike Review, Acme Awaiting)
 
   // === SCENE 3: Hero Multi-Agent Workflow (AI Command Center) ===
   console.log('\n--- Capturing Scene 3: AI Command Center Execution ---');
@@ -294,7 +294,7 @@ async function main() {
   await captureFrame('scene5_1', 0); // Approvals Queue showing Mike Reynolds $2,500 pending + Dual-Auth sidebar
 
   await wait(1000);
-  await captureFrame('scene5_2', 0); // Focus on flagged risk checks & policy boundaries
+  await captureFrame('scene5_2', 180); // Focus on flagged risk checks & policy boundaries
 
   // Admin approves the review
   console.log('Admin signing off risk review...');
