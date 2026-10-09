@@ -243,7 +243,7 @@ npm test
 33. `Production demo agent workflow isolation` — Anonymous agent prompts in public demo mode execute safely isolated strictly to simulation data without exposing admin keys.
 34. `Cross-visitor data isolation` — Anonymous public demo users' goals, customers, and memories are tagged by `visitorId` and isolated; visitors only see canonical demo fixtures and their own session records; metrics never leak other visitors' transaction volumes.
 35. `UI-visible mode truthfulness` — `/api/config` truthfully reports `mode: "simulation"` for anonymous visitors even when server credentials exist; reports `mode: "sandbox"` only for authenticated admin sessions.
-36. `UI Admin Auth session login/logout` — Evaluators authenticate securely via `/api/auth/session` setting an encrypted `httpOnly` cookie; secrets are never leaked to client bundles; logout safely reverts to anonymous simulation.
+36. `UI Admin Auth session login/logout` — Evaluators authenticate securely via `/api/auth/session` setting a cryptographically HMAC-signed `httpOnly` cookie; secrets are never leaked to client bundles; logout safely reverts to anonymous simulation.
 37. `Canonical fixture scoping & metric integrity` — Enforces exact canonical ID sets (`CANONICAL_DEMO_GOAL_IDS`, etc.) for public demo; metrics are calculated strictly over scoped records.
 38. `Canonical fixture sandbox protection` — Real PayPal Sandbox orders are never exposed merely because their ID is in the canonical fixture set.
 39. `Strong session secret production enforcement` — Rejects missing or weak session secrets in production environments.
